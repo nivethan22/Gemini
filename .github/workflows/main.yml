@@ -1,4 +1,4 @@
-name: Zero Config RDP (Bore) Fixed
+name: Zero Config RDP (Fixed NLA)
 
 on: 
   workflow_dispatch:
@@ -8,26 +8,34 @@ jobs:
     runs-on: windows-latest
 
     steps:
-    # 1. Enable RDP and allow it through the firewall
-    - name: 🔓 Enable RDP & Firewall
+    # 1. Enable RDP, Disable NLA, and Open Firewall
+    - name: 🔓 Enable RDP & Disable NLA
       run: |
+        # Enable RDP
         Set-ItemProperty -Path 'HKLM:\System\CurrentControlSet\Control\Terminal Server' -name "fDenyTSConnections" -Value 0
+        
+        # DISABLE Network Level Authentication (The likely fix for your error)
+        Set-ItemProperty -Path 'HKLM:\System\CurrentControlSet\Control\Terminal Server\WinStations\RDP-Tcp' -name "UserAuthentication" -Value 0
+        
+        # Allow through Firewall
         Enable-NetFirewallRule -DisplayGroup "Remote Desktop"
+        
+        # Restart the TermService to make sure settings apply
+        Restart-Service TermService -Force
 
     # 2. Set the User Password
     - name: 👤 Set Login Password
       run: |
-        # YOU CAN CHANGE THE PASSWORD BELOW
         $password = ConvertTo-SecureString -AsPlainText "DarkMatter123!" -Force
         Set-LocalUser -Name "runneradmin" -Password $password
 
-    # 3. Download and Extract Bore
+    # 3. Download Bore
     - name: ⬇️ Install Bore
       run: |
         Invoke-WebRequest -Uri "https://github.com/ekzhang/bore/releases/download/v0.5.0/bore-v0.5.0-x86_64-pc-windows-msvc.zip" -OutFile "bore.zip"
         Expand-Archive bore.zip -DestinationPath .
 
-    # 4. Start Tunnel (FIXED STEP)
+    # 4. Start Tunnel
     - name: 🚀 Start Tunnel & Get Address
       run: |
         Write-Host "Starting Tunnel..."
@@ -35,33 +43,29 @@ jobs:
         # Start bore in background
         Start-Process -FilePath ".\bore.exe" -ArgumentList "local 3389 --to bore.pub" -RedirectStandardOutput "bore.log" -PassThru
         
-        # Wait 5 seconds for connection
-        Start-Sleep -Seconds 5
+        # Wait 8 seconds (Give it a bit more time)
+        Start-Sleep -Seconds 8
         
-        # FIXED: Use -Raw to read file as single string, not an array
         if (Test-Path "bore.log") {
             $log = Get-Content "bore.log" -Raw
-            Write-Host "DEBUG LOG OUTPUT:"
             Write-Host $log
             
             if ($log -match "bore.pub:(\d+)") {
                 $port = $matches[1]
                 Write-Host " "
                 Write-Host "------------------------------------------------------------------"
-                Write-Host "🎉 SUCCESS! RDP ADDRESS:" -ForegroundColor Green
+                Write-Host "🎉 SUCCESS! CONNECT NOW:" -ForegroundColor Green
                 Write-Host "Address: bore.pub:$port" -ForegroundColor Yellow
                 Write-Host "User:    runneradmin"
                 Write-Host "Pass:    DarkMatter123!"
                 Write-Host "------------------------------------------------------------------"
             } else {
-                Write-Host "⚠️ Port not found in logs automatically. Check the DEBUG LOG OUTPUT above for the port number." -ForegroundColor Red
+                Write-Host "⚠️ Port not found. Check logs above." -ForegroundColor Red
             }
-        } else {
-             Write-Host "bore.log not found. Tunnel failed to start."
         }
 
     # 5. Keep Alive
     - name: 🛑 Keep Alive
       run: |
-        Write-Host "Session is active. Connect now!"
+        Write-Host "Session is active."
         while ($true) { Start-Sleep -Seconds 60 }
