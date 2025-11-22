@@ -1,4 +1,4 @@
-name: Chrome Remote Desktop (ULTIMATE OPTIMIZATION)
+name: Chrome Remote Desktop (ULTIMATE OPTIMIZATION - FIXED)
 
 on:
   workflow_dispatch:
@@ -22,9 +22,11 @@ jobs:
         # Disable the "Server Manager" popup
         Set-ItemProperty -Path 'HKLM:\SOFTWARE\Microsoft\ServerManager' -Name 'DoNotOpenServerManagerAtLogon' -Value 1
         
-        # Install resolution utility
-        Invoke-WebRequest -Uri "https://www.nirsoft.net/utils/change_screen_resolution.zip" -OutFile "setres.zip"
-        Expand-Archive setres.zip -DestinationPath "C:\setres"
+        # Install resolution utility (FIXED URL for NirCmd)
+        Write-Host "Downloading NirCmd Resolution Tool..."
+        $nircmdUrl = "https://www.nirsoft.net/utils/nircmd.zip" # CORRECTED LINK
+        Invoke-WebRequest -Uri $nircmdUrl -OutFile "nircmd.zip"
+        Expand-Archive nircmd.zip -DestinationPath "C:\setres"
         
         # Enable script execution for this session
         Set-ExecutionPolicy -Scope Process -ExecutionPolicy Bypass -Force
@@ -32,50 +34,33 @@ jobs:
         Start-Service "Audiosrv"
         Set-Service "Audiosrv" -StartupType Automatic
 
-    # 2. ⚡ VM Optimization (The Debloat Step)
+    # 2. ⚡ VM Optimization (Debloat)
     - name: ⚡ Debloat and Optimize Windows Server
       shell: powershell
       run: |
         Write-Host "Starting aggressive system optimization..."
         
-        # --- Disable Unnecessary Services ---
-        $ServicesToDisable = @(
-            "Fax",                  # Faxing service
-            "PrintSpooler",         # Printer service
-            "WSearch",              # Windows Search Indexer (Resource heavy)
-            "DiagTrack",            # Diagnostics Tracking Service (Telemetry)
-            "cbdhsvc",              # ClipSVC (User Experience/Telemetry)
-            "MapsBroker",           # Downloaded Maps Manager
-            "OneSyncSvc",           # Sync Host (Used by UWP apps)
-            "TrkWks",               # Distributed Link Tracking Client
-            "dmwappushservice",     # WAP Push Message Routing (Telemetry)
-            "DoSvc"                 # Delivery Optimization (Updates sharing)
-        )
-        
+        # --- Optimization Scripts (Services, Telemetry, etc.) ---
+        $ServicesToDisable = @("Fax", "PrintSpooler", "WSearch", "DiagTrack", "cbdhsvc", "MapsBroker", "OneSyncSvc", "TrkWks", "dmwappushservice", "DoSvc")
         foreach ($svc in $ServicesToDisable) {
-            try {
-                Get-Service -Name $svc | Set-Service -StartupType Disabled -ErrorAction Stop
-                Write-Host "Disabled Service: $svc"
-            } catch {
-                Write-Host "Service $svc not found or already disabled."
-            }
+            try { Get-Service -Name $svc | Set-Service -StartupType Disabled -ErrorAction Stop } catch {}
         }
-
-        # --- Disable Telemetry via Registry ---
+        
+        # Disable Telemetry via Registry
         Set-ItemProperty -Path "HKLM:\SOFTWARE\Policies\Microsoft\Windows\DataCollection" -Name "AllowTelemetry" -Value 0 -Type DWord -Force
         
-        # --- Visual Performance Tweaks ---
+        # Disables visual effects for snappier feel
         Set-ItemProperty -Path 'HKCU:\Control Panel\Desktop' -Name 'UserPreferencesMask' -Value ([byte[]]'(0x90, 0x12, 0x01, 0x80, 0x10, 0x00, 0x00, 0x00)') -Type Binary -Force
         
-        Write-Host "Optimization complete. System is lighter."
+        Write-Host "Optimization complete."
 
     # 3. Install Chrome Remote Desktop
     - name: ⬇️ Install Chrome Remote Desktop
       run: |
         Write-Host "Downloading MSI..."
-        # FIX: Using the correct, persistent download URL
-        $url = "https://dl.google.com/edgedl/chrome-remote-desktop/chromeremotedesktophost.msi"
-        Invoke-WebRequest -Uri $url -OutFile "crd.msi"
+        # FIXED URL for CRD Installer
+        $crdUrl = "https://dl.google.com/edgedl/chrome-remote-desktop/chromeremotedesktophost.msi" 
+        Invoke-WebRequest -Uri $crdUrl -OutFile "crd.msi"
         
         Write-Host "Installing..."
         Start-Process -FilePath "msiexec.exe" -ArgumentList "/i crd.msi /qn" -Wait
@@ -88,10 +73,9 @@ jobs:
       run: |
         # --- Resolution Fix ---
         Write-Host "Setting resolution to 1600x900..."
-        C:\setres\nircmd.exe setdisplay 1600 900 32
+        C:\setres\nircmdc.exe setdisplay 1600 900 32 # Using nircmdc.exe (console version)
         
         # --- Host Registration ---
-        # Extracts the OAuth Code from the user's paste (e.g., the 4/xxxxxxx string)
         if ($Env:INPUT_CMD -match '(4/[^"\s]+)') {
             $code = $matches[1]
             Write-Host "✅ OAuth Code detected: $code"
@@ -100,7 +84,6 @@ jobs:
             exit 1
         }
 
-        # Locates the binary regardless of the version path
         $binary = Get-ChildItem "C:\Program Files (x86)\Google\Chrome Remote Desktop" -Recurse -Filter "remoting_start_host.exe" | Select-Object -ExpandProperty FullName -First 1
 
         Write-Host "🚀 Registering Runner..."
