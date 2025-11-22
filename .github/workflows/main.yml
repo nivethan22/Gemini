@@ -1,38 +1,67 @@
-name: Windows CRD (No Ngrok)
+name: Zero Config RDP (Bore)
 
-on:
+on: 
   workflow_dispatch:
-    inputs:
-      # You will paste the Google Auth Code here when you run the workflow
-      crd_code:
-        description: 'Paste the Windows PowerShell command from Google Headless'
-        required: true
 
 jobs:
   build:
     runs-on: windows-latest
 
     steps:
-    - name: ⬇️ Download Chrome Remote Desktop
+    # 1. Enable RDP and allow it through the firewall
+    - name: 🔓 Enable RDP & Firewall
       run: |
-        Invoke-WebRequest -Uri "https://dl.google.com/remed/host/chromeremotedesktop.msi" -OutFile "chromeremotedesktop.msi"
+        Set-ItemProperty -Path 'HKLM:\System\CurrentControlSet\Control\Terminal Server' -name "fDenyTSConnections" -Value 0
+        Enable-NetFirewallRule -DisplayGroup "Remote Desktop"
 
-    - name: 📦 Install Chrome Remote Desktop
+    # 2. Set the User Password
+    - name: 👤 Set Login Password
       run: |
-        # Install the MSI silently
-        Start-Process -FilePath "msiexec.exe" -ArgumentList "/i chromeremotedesktop.msi /qn" -Wait
+        # YOU CAN CHANGE THE PASSWORD BELOW to whatever you want
+        $password = ConvertTo-SecureString -AsPlainText "DarkMatter123!" -Force
+        Set-LocalUser -Name "runneradmin" -Password $password
 
-    - name: 🚀 Activate CRD
+    # 3. Download and Extract Bore (The tunneling tool)
+    - name: ⬇️ Install Bore
       run: |
-        # Using the input code from the workflow dispatch
-        # We append the PIN flag to set a static PIN (e.g., 123456)
-        $code = "${{ inputs.crd_code }}"
-        # The command from Google looks like '.\remotedesktop.exe ...'. We run it and add the pin.
-        Invoke-Expression "$code --pin=123456"
+        Invoke-WebRequest -Uri "https://github.com/ekzhang/bore/releases/download/v0.5.0/bore-v0.5.0-x86_64-pc-windows-msvc.zip" -OutFile "bore.zip"
+        Expand-Archive bore.zip -DestinationPath .
 
+    # 4. Start the Tunnel and Print the Address
+    - name: 🚀 Start Tunnel & Get Address
+      run: |
+        Write-Host "------------------------------------------------------------------"
+        Write-Host "Starting Tunnel..."
+        
+        # Start bore in the background, piping output to a log file so we can read the port
+        Start-Process -FilePath ".\bore.exe" -ArgumentList "local 3389 --to bore.pub" -RedirectStandardOutput "bore.log" -PassThru
+        
+        # Wait a few seconds for it to connect
+        Start-Sleep -Seconds 5
+        
+        # Read the log to find the remote port
+        $log = Get-Content "bore.log"
+        Write-Host "DEBUG LOG: $log"
+        
+        # Extract the port number using regex
+        # The output usually looks like: "listening at bore.pub:45123"
+        if ($log -match "bore.pub:(\d+)") {
+            $port = $matches[1]
+            Write-Host " "
+            Write-Host "🎉 SUCCESS! YOUR RDP ADDRESS IS BELOW:" -ForegroundColor Green
+            Write-Host "------------------------------------------------------------------"
+            Write-Host "Server: bore.pub" -ForegroundColor Cyan
+            Write-Host "Port:   $port" -ForegroundColor Cyan
+            Write-Host "Full Address: bore.pub:$port" -ForegroundColor Yellow
+            Write-Host "User: runneradmin"
+            Write-Host "Pass: DarkMatter123!"
+            Write-Host "------------------------------------------------------------------"
+        } else {
+            Write-Host "Could not find port in logs. Check the raw logs above."
+        }
+
+    # 5. Keep the machine alive (Anti-exit loop)
     - name: 🛑 Keep Alive
       run: |
-        Write-Host "Chrome Remote Desktop is running!"
-        Write-Host "Go to https://remotedesktop.google.com/access to connect."
-        Write-Host "Your PIN is: 123456"
+        Write-Host "Session is active. Connect now!"
         while ($true) { Start-Sleep -Seconds 60 }
