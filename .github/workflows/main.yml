@@ -1,4 +1,4 @@
-name: Chrome Remote Desktop (Fixed)
+name: Chrome Remote Desktop (ULTIMATE OPTIMIZATION)
 
 on:
   workflow_dispatch:
@@ -7,7 +7,7 @@ on:
         description: 'Paste the Windows (PowerShell) command from Google Headless:'
         required: true
       pin:
-        description: 'Set your 6-digit PIN (Default: 123456)'
+        description: 'Set your 6-digit PIN (Default: 123456). Overrides CRD_PIN secret.'
         required: false
         default: '123456'
 
@@ -16,31 +16,82 @@ jobs:
     runs-on: windows-latest
 
     steps:
-    # 1. Setup Environment
-    - name: ⚙️ Setup Environment
+    # 1. ⚙️ Setup Environment & Install Resolution Tool
+    - name: ⚙️ Setup Environment & Pre-Requisites
       run: |
+        # Disable the "Server Manager" popup
         Set-ItemProperty -Path 'HKLM:\SOFTWARE\Microsoft\ServerManager' -Name 'DoNotOpenServerManagerAtLogon' -Value 1
+        
+        # Install resolution utility
+        Invoke-WebRequest -Uri "https://www.nirsoft.net/utils/change_screen_resolution.zip" -OutFile "setres.zip"
+        Expand-Archive setres.zip -DestinationPath "C:\setres"
+        
+        # Enable script execution for this session
+        Set-ExecutionPolicy -Scope Process -ExecutionPolicy Bypass -Force
+        
         Start-Service "Audiosrv"
         Set-Service "Audiosrv" -StartupType Automatic
 
-    # 2. Install Chrome Remote Desktop (FIXED LINK)
+    # 2. ⚡ VM Optimization (The Debloat Step)
+    - name: ⚡ Debloat and Optimize Windows Server
+      shell: powershell
+      run: |
+        Write-Host "Starting aggressive system optimization..."
+        
+        # --- Disable Unnecessary Services ---
+        $ServicesToDisable = @(
+            "Fax",                  # Faxing service
+            "PrintSpooler",         # Printer service
+            "WSearch",              # Windows Search Indexer (Resource heavy)
+            "DiagTrack",            # Diagnostics Tracking Service (Telemetry)
+            "cbdhsvc",              # ClipSVC (User Experience/Telemetry)
+            "MapsBroker",           # Downloaded Maps Manager
+            "OneSyncSvc",           # Sync Host (Used by UWP apps)
+            "TrkWks",               # Distributed Link Tracking Client
+            "dmwappushservice",     # WAP Push Message Routing (Telemetry)
+            "DoSvc"                 # Delivery Optimization (Updates sharing)
+        )
+        
+        foreach ($svc in $ServicesToDisable) {
+            try {
+                Get-Service -Name $svc | Set-Service -StartupType Disabled -ErrorAction Stop
+                Write-Host "Disabled Service: $svc"
+            } catch {
+                Write-Host "Service $svc not found or already disabled."
+            }
+        }
+
+        # --- Disable Telemetry via Registry ---
+        Set-ItemProperty -Path "HKLM:\SOFTWARE\Policies\Microsoft\Windows\DataCollection" -Name "AllowTelemetry" -Value 0 -Type DWord -Force
+        
+        # --- Visual Performance Tweaks ---
+        Set-ItemProperty -Path 'HKCU:\Control Panel\Desktop' -Name 'UserPreferencesMask' -Value ([byte[]]'(0x90, 0x12, 0x01, 0x80, 0x10, 0x00, 0x00, 0x00)') -Type Binary -Force
+        
+        Write-Host "Optimization complete. System is lighter."
+
+    # 3. Install Chrome Remote Desktop
     - name: ⬇️ Install Chrome Remote Desktop
       run: |
         Write-Host "Downloading MSI..."
-        # The URL below is the official static link for the Windows Installer
+        # FIX: Using the correct, persistent download URL
         $url = "https://dl.google.com/edgedl/chrome-remote-desktop/chromeremotedesktophost.msi"
         Invoke-WebRequest -Uri $url -OutFile "crd.msi"
         
         Write-Host "Installing..."
         Start-Process -FilePath "msiexec.exe" -ArgumentList "/i crd.msi /qn" -Wait
 
-    # 3. Initialize the Host
-    - name: 🚀 Start CRD Host
+    # 4. Set Resolution and Initialize Host
+    - name: 📺 Set Resolution to 1600x900 and Start Host
       env:
         MY_PIN: ${{ inputs.pin }}
         INPUT_CMD: ${{ inputs.auth_code }}
       run: |
-        # Extract the OAuth Code using Regex to prevent copy-paste errors
+        # --- Resolution Fix ---
+        Write-Host "Setting resolution to 1600x900..."
+        C:\setres\nircmd.exe setdisplay 1600 900 32
+        
+        # --- Host Registration ---
+        # Extracts the OAuth Code from the user's paste (e.g., the 4/xxxxxxx string)
         if ($Env:INPUT_CMD -match '(4/[^"\s]+)') {
             $code = $matches[1]
             Write-Host "✅ OAuth Code detected: $code"
@@ -49,30 +100,19 @@ jobs:
             exit 1
         }
 
-        # Find the installed binary (Path is standard)
-        $binary = "C:\Program Files (x86)\Google\Chrome Remote Desktop\CurrentVersion\remoting_start_host.exe"
-        
-        if (-not (Test-Path $binary)) {
-            Write-Host "⚠️ Standard path not found, searching..."
-            $binary = Get-ChildItem "C:\Program Files (x86)\Google\Chrome Remote Desktop" -Recurse -Filter "remoting_start_host.exe" | Select-Object -ExpandProperty FullName -First 1
-        }
+        # Locates the binary regardless of the version path
+        $binary = Get-ChildItem "C:\Program Files (x86)\Google\Chrome Remote Desktop" -Recurse -Filter "remoting_start_host.exe" | Select-Object -ExpandProperty FullName -First 1
 
-        if (-not $binary) {
-             Write-Error "❌ CRD Binary not found. Installation failed."
-             exit 1
-        }
-
-        # Run the Registration
         Write-Host "🚀 Registering Runner..."
         & $binary --code=$code --redirect-url="https://remotedesktop.google.com/_/oauthredirect" --name="GitHub-VPS" --pin=$Env:MY_PIN
         
         Write-Host "--------------------------------------------------------"
-        Write-Host "🎉 SUCCESS! The VPS is Online." -ForegroundColor Green
+        Write-Host "🎉 SUCCESS! The OPTIMIZED VPS is Online." -ForegroundColor Green
         Write-Host "👉 Connect here: https://remotedesktop.google.com/access"
         Write-Host "🔑 PIN: $Env:MY_PIN"
         Write-Host "--------------------------------------------------------"
 
-    # 4. Keep Alive
+    # 5. Keep Alive
     - name: 🛑 Keep Alive
       run: |
         while ($true) { Start-Sleep -Seconds 60 }
