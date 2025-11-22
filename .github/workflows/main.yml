@@ -16,7 +16,8 @@ on:
 
 jobs:
   run-cloud-gaming:
-    runs-on: windows-latest
+    # Set to windows-2019 for the Windows 10-like environment
+    runs-on: windows-2019
     
     timeout-minutes: 360 # 6 hours max run time
     
@@ -29,7 +30,11 @@ jobs:
       - name: Install Virtual Display Driver
         shell: powershell
         run: |
-          # ... (Your existing Virtual Display/Audio setup code goes here) ...
+          # The commands below install the ViGEmBus driver, which is often needed for virtual gamepads.
+          # This setup is critical for remote gaming compatibility.
+          Write-Host "Installing ViGEmBus (Virtual Gamepad Emulation Bus) driver..."
+          choco install -y vigembus
+          Write-Host "ViGEmBus driver installation initiated."
 
       - name: Disable Windows Test Mode
         shell: powershell
@@ -49,8 +54,16 @@ jobs:
       # --- SETUP: SUNSHINE & ZEROTIER ---
 
       - name: Install & Start Sunshine (Automatic Latest Version)
-        # ... (Your fixed Sunshine install code goes here) ...
-        # (Ensure this step installs Sunshine as a service and starts it)
+        shell: powershell
+        run: |
+          # Install Sunshine via Chocolatey, which handles dependencies and service registration.
+          Write-Host "Installing latest Sunshine streaming host..."
+          choco install -y sunshine
+          
+          # Ensure the Sunshine service is running
+          Get-Service -Name Sunshine | Stop-Service
+          Start-Service -Name Sunshine
+          Write-Host "Sunshine service is running."
 
       - name: Install and Join ZeroTier Network
         shell: powershell
