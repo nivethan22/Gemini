@@ -16,7 +16,7 @@ on:
 
 jobs:
   run-cloud-gaming:
-    runs-on: windows-latest
+    runs-on: windows-2019
     
     timeout-minutes: 360 # 6 hours max run time
     
