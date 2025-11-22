@@ -1,0 +1,38 @@
+name: Windows CRD (No Ngrok)
+
+on:
+  workflow_dispatch:
+    inputs:
+      # You will paste the Google Auth Code here when you run the workflow
+      crd_code:
+        description: 'Paste the Windows PowerShell command from Google Headless'
+        required: true
+
+jobs:
+  build:
+    runs-on: windows-latest
+
+    steps:
+    - name: ⬇️ Download Chrome Remote Desktop
+      run: |
+        Invoke-WebRequest -Uri "https://dl.google.com/remed/host/chromeremotedesktop.msi" -OutFile "chromeremotedesktop.msi"
+
+    - name: 📦 Install Chrome Remote Desktop
+      run: |
+        # Install the MSI silently
+        Start-Process -FilePath "msiexec.exe" -ArgumentList "/i chromeremotedesktop.msi /qn" -Wait
+
+    - name: 🚀 Activate CRD
+      run: |
+        # Using the input code from the workflow dispatch
+        # We append the PIN flag to set a static PIN (e.g., 123456)
+        $code = "${{ inputs.crd_code }}"
+        # The command from Google looks like '.\remotedesktop.exe ...'. We run it and add the pin.
+        Invoke-Expression "$code --pin=123456"
+
+    - name: 🛑 Keep Alive
+      run: |
+        Write-Host "Chrome Remote Desktop is running!"
+        Write-Host "Go to https://remotedesktop.google.com/access to connect."
+        Write-Host "Your PIN is: 123456"
+        while ($true) { Start-Sleep -Seconds 60 }
