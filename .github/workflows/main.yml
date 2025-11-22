@@ -24,7 +24,7 @@ jobs:
         
         # Install resolution utility (FIXED URL for NirCmd)
         Write-Host "Downloading NirCmd Resolution Tool..."
-        $nircmdUrl = "https://www.nirsoft.net/utils/nircmd.zip" # CORRECTED LINK
+        $nircmdUrl = "https://www.nirsoft.net/utils/nircmd.zip" # Fixed URL
         Invoke-WebRequest -Uri $nircmdUrl -OutFile "nircmd.zip"
         Expand-Archive nircmd.zip -DestinationPath "C:\setres"
         
@@ -35,12 +35,12 @@ jobs:
         Set-Service "Audiosrv" -StartupType Automatic
 
     # 2. ⚡ VM Optimization (Debloat)
-    - name: ⚡ Debloat and Optimize Windows Server
+    - name: ⚡ Debloat and Optimize Windows Server (Hex Parsing Fixed)
       shell: powershell
       run: |
         Write-Host "Starting aggressive system optimization..."
         
-        # --- Optimization Scripts (Services, Telemetry, etc.) ---
+        # --- Disable Unnecessary Services ---
         $ServicesToDisable = @("Fax", "PrintSpooler", "WSearch", "DiagTrack", "cbdhsvc", "MapsBroker", "OneSyncSvc", "TrkWks", "dmwappushservice", "DoSvc")
         foreach ($svc in $ServicesToDisable) {
             try { Get-Service -Name $svc | Set-Service -StartupType Disabled -ErrorAction Stop } catch {}
@@ -49,8 +49,10 @@ jobs:
         # Disable Telemetry via Registry
         Set-ItemProperty -Path "HKLM:\SOFTWARE\Policies\Microsoft\Windows\DataCollection" -Name "AllowTelemetry" -Value 0 -Type DWord -Force
         
-        # Disables visual effects for snappier feel
-        Set-ItemProperty -Path 'HKCU:\Control Panel\Desktop' -Name 'UserPreferencesMask' -Value ([byte[]]'(0x90, 0x12, 0x01, 0x80, 0x10, 0x00, 0x00, 0x00)') -Type Binary -Force
+        # --- Visual Performance Tweaks (FIXED PARSING ERROR) ---
+        # UserPreferencesMask value for disabling most visual effects (fixed by defining the byte array correctly)
+        [byte[]]$bytes = 0x90, 0x12, 0x01, 0x80, 0x10, 0x00, 0x00, 0x00
+        Set-ItemProperty -Path 'HKCU:\Control Panel\Desktop' -Name 'UserPreferencesMask' -Value $bytes -Type Binary -Force
         
         Write-Host "Optimization complete."
 
@@ -73,7 +75,7 @@ jobs:
       run: |
         # --- Resolution Fix ---
         Write-Host "Setting resolution to 1600x900..."
-        C:\setres\nircmdc.exe setdisplay 1600 900 32 # Using nircmdc.exe (console version)
+        C:\setres\nircmdc.exe setdisplay 1600 900 32
         
         # --- Host Registration ---
         if ($Env:INPUT_CMD -match '(4/[^"\s]+)') {
