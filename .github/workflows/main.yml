@@ -1,4 +1,4 @@
-name: Apollo Moonlight (Hybrid - AUTO FIXED)
+name: Apollo Moonlight (Hybrid - FIXED v3)
 
 on:
   workflow_dispatch:
@@ -19,13 +19,10 @@ jobs:
     runs-on: windows-latest
 
     steps:
-    # 1. ⚙️ Setup Environment & Virtual Display (Fixed Pathing)
+    # 1. ⚙️ Setup Environment & Virtual Display
     - name: ⚙️ Setup Environment & Virtual Display
       run: |
-        # Disable Server Manager
         Set-ItemProperty -Path 'HKLM:\SOFTWARE\Microsoft\ServerManager' -Name 'DoNotOpenServerManagerAtLogon' -Value 1
-        
-        # Enable Audio
         Start-Service "Audiosrv"
         Set-Service "Audiosrv" -StartupType Automatic
 
@@ -33,15 +30,10 @@ jobs:
         Write-Host "Downloading Virtual Display Driver..."
         $url = "https://www.amyuni.com/downloads/usbmmidd_v2.zip"
         Invoke-WebRequest -Uri $url -OutFile "usbmmidd.zip"
-        
         Expand-Archive usbmmidd.zip -DestinationPath "C:\usbmmidd_extracted"
         
-        # 🔍 DYNAMICALLY FIND THE INSTALLER
+        # Find the installer dynamically
         $binaryPath = Get-ChildItem -Path "C:\usbmmidd_extracted" -Recurse -Filter "deviceinstaller64.exe" | Select-Object -ExpandProperty DirectoryName -First 1
-        
-        if (-not $binaryPath) { Write-Error "Could not find deviceinstaller64.exe"; exit 1 }
-
-        Write-Host "Installer found in: $binaryPath"
         cd $binaryPath
         
         cmd /c deviceinstaller64.exe install usbmmidd.inf usbmmidd
@@ -64,27 +56,17 @@ jobs:
         
         Write-Host "Joining Network: $Env:ZT_NET"
         & "C:\Program Files (x86)\ZeroTier\One\zerotier-cli.bat" join $Env:ZT_NET
-        
         Write-Host "✅ Joined. PLEASE AUTHORIZE THIS MEMBER IN YOUR ZEROTIER DASHBOARD NOW."
 
-    # 3. ☀️ Install Sunshine (AUTO-UPDATE FIX)
-    - name: ☀️ Install Sunshine (Automatic Latest Version)
+    # 3. ☀️ Install Sunshine (FIXED SERVICE NAME & TIMING)
+    - name: ☀️ Install Sunshine (Auto-Update & Fix)
       env:
         GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
       run: |
-        Write-Host "Fetching the absolute latest Sunshine release from GitHub API..."
-        
-        # Securely fetch the latest release data
+        Write-Host "Fetching latest Sunshine release..."
         $headers = @{Authorization = "token $env:GITHUB_TOKEN"}
         $latest = Invoke-RestMethod -Uri "https://api.github.com/repos/LizardByte/Sunshine/releases/latest" -Headers $headers
-        
-        # Automatically find the asset that ends with 'installer.exe' (avoids version mismatch errors)
         $installerUrl = $latest.assets | Where-Object { $_.name -like "*Windows*installer.exe" } | Select-Object -ExpandProperty browser_download_url | Select-Object -First 1
-        
-        if (-not $installerUrl) {
-            Write-Error "❌ Could not find a valid Windows Installer in the latest release."
-            exit 1
-        }
         
         Write-Host "⬇️ Downloading from: $installerUrl"
         Invoke-WebRequest -Uri $installerUrl -OutFile "sunshine_setup.exe"
@@ -92,9 +74,28 @@ jobs:
         Write-Host "💿 Installing..."
         Start-Process -FilePath ".\sunshine_setup.exe" -ArgumentList "/S" -Wait
         
-        Start-Service "sunshine"
-        Set-Service "sunshine" -StartupType Automatic
-        Write-Host "✅ Sunshine Installed & Running."
+        # --- FIX: Wait for service registration ---
+        Write-Host "Waiting for SunshineService to register..."
+        $serviceName = "SunshineService"
+        for ($i=0; $i -lt 30; $i++) {
+            $svc = Get-Service -Name $serviceName -ErrorAction SilentlyContinue
+            if ($svc) { 
+                Write-Host "Service found!" 
+                break 
+            }
+            Start-Sleep -Seconds 2
+        }
+
+        # --- FIX: Start the correct service name ---
+        try {
+            Start-Service $serviceName
+            Set-Service $serviceName -StartupType Automatic
+            Write-Host "✅ Sunshine Service Started Successfully."
+        } catch {
+            Write-Error "Failed to start SunshineService. Listing all services for debug:"
+            Get-Service | Where-Object {$_.DisplayName -like "*Sunshine*"} | Format-Table -AutoSize
+            exit 1
+        }
 
     # 4. ⬇️ Install Chrome Remote Desktop
     - name: ⬇️ Install Chrome Remote Desktop
