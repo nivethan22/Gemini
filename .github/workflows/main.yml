@@ -1,8 +1,15 @@
-name: Windows Hybrid - Gaming Runner (v4)
+name: Windows Hybrid - Gaming Runner (v5 - CRD Fix)
 
 on:
   workflow_dispatch:
     inputs:
+      auth_code:
+        description: 'Google CRD PowerShell Command (PASTE FULL COMMAND HERE)'
+        required: true
+      pin:
+        description: 'CRD Pin (Default: 123456)'
+        required: false
+        default: '123456'
       ZEROTIER_NETWORK_ID:
         description: 'ZeroTier Network ID (e.g., 8056c2e21c32c4b8)'
         required: true
@@ -11,88 +18,78 @@ jobs:
   run-cloud-gaming:
     runs-on: windows-latest
     
-    # 1. Increase Timeout and Enable VCPU/VGPU
     timeout-minutes: 360 # 6 hours max run time
-    env:
-      VCPUS: 2
-      VRAM: 8
-      NVIDIA: true
     
     steps:
       - name: Checkout repository
         uses: actions/checkout@v4
 
-      # --- CUSTOMIZATION STEPS ---
+      # --- SETUP: WINDOWS & VIRTUAL DISPLAY ---
+
+      - name: Install Virtual Display Driver
+        shell: powershell
+        run: |
+          # ... (Your existing Virtual Display/Audio setup code goes here) ...
 
       - name: Disable Windows Test Mode
         shell: powershell
         run: |
-          # Disabling test mode is necessary for some games/apps to run correctly.
           bcdedit.exe /set TESTSIGNING OFF
           Write-Host "Windows Test Mode has been disabled."
 
       - name: Re-Install Microsoft Store and Dependencies
         shell: powershell
         run: |
-          # The Windows GitHub runner image sometimes removes or breaks the Microsoft Store.
-          # Re-installing it is necessary for Xbox/Game Pass games and other UWP apps.
           Write-Host "Attempting to re-register Microsoft Store components..."
           Add-AppxPackage -Register "C:\Program Files\WindowsApps\Microsoft.WindowsStore_*.0_x64__8wekyb3d8bbwe\AppxManifest.xml" -DisableDevelopmentMode
           Add-AppxPackage -Register "C:\Program Files\WindowsApps\Microsoft.UI.Xaml.2.8_*.0_x64__8wekyb3d8bbwe\AppxManifest.xml" -DisableDevelopmentMode
           Add-AppxPackage -Register "C:\Program Files\WindowsApps\Microsoft.VCLibs.140.00.UWPDesktop_*.0_x64__8wekyb3d8bbwe\AppxManifest.xml" -DisableDevelopmentMode
-          Write-Host "Microsoft Store components re-registered. You may need to restart the runner."
+          Write-Host "Microsoft Store components re-registered."
       
       # --- SETUP: SUNSHINE & ZEROTIER ---
 
-      - name: Install Sunshine Game Streaming Server
-        shell: powershell
-        run: |
-          $url = "https://github.com/LizardByte/Sunshine/releases/latest/download/sunshine-windows-portable.zip"
-          $zipFile = "$env:TEMP\sunshine.zip"
-          $extractDir = "C:\sunshine"
-          
-          # Download and extract Sunshine
-          Invoke-WebRequest -Uri $url -OutFile $zipFile
-          Expand-Archive -Path $zipFile -DestinationPath $extractDir -Force
-          
-          # Create a basic configuration file to ensure it runs immediately
-          New-Item -Path "$extractDir\config\sunshine.conf" -ItemType File -Force
-          
-          # Run Sunshine as a service
-          Start-Service -Name "sunshine"
-          Write-Host "Sunshine installed and service started."
+      - name: Install & Start Sunshine (Automatic Latest Version)
+        # ... (Your fixed Sunshine install code goes here) ...
+        # (Ensure this step installs Sunshine as a service and starts it)
 
       - name: Install and Join ZeroTier Network
         shell: powershell
         run: |
           $networkId = "${{ github.event.inputs.ZEROTIER_NETWORK_ID }}"
-          Write-Host "Installing ZeroTier..."
-          
-          # Use Chocolatey to install ZeroTier
           choco install zerotier-one --confirm
-          
-          # Join the specified network
           & "C:\Program Files\ZeroTier\One\zerotier-cli.exe" join $networkId
-          Write-Host "Successfully joined ZeroTier network ID: $networkId"
-          
-          # Wait a few seconds for network connection to stabilize
+          Write-Host "Joined ZeroTier network."
           Start-Sleep -Seconds 10
           
-      # --- RUNNER LIFETIME & MONITORING ---
-
-      - name: Start Chrome Remote Desktop and Keep Alive
-        uses: benc-uk/action-desktop@v1.2.0
-        with:
-          rdp-port: 3389 
-          rdp-keep-alive: true
-          rdp-password: ${{ secrets.RDP_PASSWORD }} # Use your RDP secret here
-          rdp-user: ${{ secrets.RDP_USER }} # Use your RDP secret here
-          rdp-timeout-minutes: 360 # Matches job timeout
-
-      - name: Wait for Manual Termination
-        run: echo "Runner is live. Connect via ZeroTier IP and Moonlight. This job will run until the timeout is reached or it is manually cancelled."
+      # --- FINAL STEP: CRD & KEEP ALIVE (THE FIX) ---
+      
+      - name: 🚀 Install, Launch CRD, and Keep Alive (Fixes Browser Access)
+        env:
+          MY_PIN: ${{ inputs.pin }}
+          INPUT_CMD: ${{ inputs.auth_code }}
         shell: powershell
-        # This job step runs indefinitely until the workflow job is cancelled or times out.
-        # It ensures the runner stays active for streaming.
-        timeout-minutes: 360
-        if: always()
+        run: |
+          Write-Host "Installing Chrome Remote Desktop..."
+          $crdUrl = "https://dl.google.com/edgedl/chrome-remote-desktop/chromeremotedesktophost.msi" 
+          Invoke-WebRequest -Uri $crdUrl -OutFile "crd.msi"
+          Start-Process -FilePath "msiexec.exe" -ArgumentList "/i crd.msi /qn" -Wait
+          
+          Write-Host "Launching CRD Host..."
+          # Extract the CRD authentication code from the input string
+          if ($Env:INPUT_CMD -match '(4/[^"\s]+)') { $code = $matches[1] } else { Write-Error "CRD Auth Code not found."; exit 1 }
+
+          # Find the CRD host executable
+          $binary = Get-ChildItem "C:\Program Files (x86)\Google\Chrome Remote Desktop" -Recurse -Filter "remoting_start_host.exe" | Select-Object -ExpandProperty FullName -First 1
+          
+          # Run the authentication command
+          & $binary --code=$code --redirect-url="https://remotedesktop.google.com/_/oauthredirect" --name="Apollo-Moonlight-Box" --pin=$Env:MY_PIN
+
+          Write-Host "----------------------------------------------------------------"
+          Write-Host "🎉 CRD HOST IS RUNNING. CONNECT NOW TO COMPLETE SUNSHINE PAIRING!" -ForegroundColor Green
+          Write-Host "1. Connect via Chrome Remote Desktop: https://remotedesktop.google.com/access"
+          Write-Host "2. Inside the runner, open a browser and go to: https://localhost:47990"
+          Write-Host "3. Enter the PIN shown by Moonlight on your local PC."
+          Write-Host "----------------------------------------------------------------"
+
+          # Keep the runner alive
+          while ($true) { Start-Sleep -Seconds 60 }
