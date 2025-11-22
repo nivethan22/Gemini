@@ -1,4 +1,4 @@
-name: Apollo Moonlight (Hybrid - FIXED)
+name: Apollo Moonlight (Hybrid - FIXED v2)
 
 on:
   workflow_dispatch:
@@ -19,7 +19,7 @@ jobs:
     runs-on: windows-latest
 
     steps:
-    # 1. ⚙️ Setup & Virtual Display (CRITICAL for Moonlight)
+    # 1. ⚙️ Setup & Virtual Display (FIXED PATHING)
     - name: ⚙️ Setup Environment & Virtual Display
       run: |
         # Disable Server Manager
@@ -30,14 +30,25 @@ jobs:
         Set-Service "Audiosrv" -StartupType Automatic
 
         # --- Install Virtual Display Driver (usbmmidd) ---
-        # Sunshine needs a monitor to capture. GitHub Runners have none.
         Write-Host "Downloading Virtual Display Driver..."
         $url = "https://www.amyuni.com/downloads/usbmmidd_v2.zip"
         Invoke-WebRequest -Uri $url -OutFile "usbmmidd.zip"
-        Expand-Archive usbmmidd.zip -DestinationPath "C:\usbmmidd"
         
-        cd C:\usbmmidd
-        # Run the installer bat file (silently adds the device)
+        # Extract to a temporary path
+        Expand-Archive usbmmidd.zip -DestinationPath "C:\usbmmidd_extracted"
+        
+        # 🔍 DYNAMICALLY FIND THE INSTALLER (Fixes the error)
+        $binaryPath = Get-ChildItem -Path "C:\usbmmidd_extracted" -Recurse -Filter "deviceinstaller64.exe" | Select-Object -ExpandProperty DirectoryName -First 1
+        
+        if (-not $binaryPath) {
+            Write-Error "Could not find deviceinstaller64.exe inside the extracted zip."
+            exit 1
+        }
+
+        Write-Host "Installer found in: $binaryPath"
+        cd $binaryPath
+        
+        # Run the installer
         cmd /c deviceinstaller64.exe install usbmmidd.inf usbmmidd
         cmd /c deviceinstaller64.exe enableidd 1
         Write-Host "Virtual Display Activated."
@@ -51,7 +62,12 @@ jobs:
         choco install zerotier-one -y
         
         Write-Host "Waiting for ZeroTier service..."
-        Start-Sleep -Seconds 10
+        # Loop to ensure service is ready before joining
+        for ($i=0; $i -lt 20; $i++) {
+            if (Get-Service "ZeroTierOneService" -ErrorAction SilentlyContinue) { break }
+            Start-Sleep -Seconds 2
+        }
+        Start-Sleep -Seconds 5
         
         Write-Host "Joining Network: $Env:ZT_NET"
         & "C:\Program Files (x86)\ZeroTier\One\zerotier-cli.bat" join $Env:ZT_NET
