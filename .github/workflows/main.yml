@@ -1,4 +1,4 @@
-name: Zero Config RDP (Bore)
+name: Zero Config RDP (Bore) Fixed
 
 on: 
   workflow_dispatch:
@@ -17,50 +17,50 @@ jobs:
     # 2. Set the User Password
     - name: 👤 Set Login Password
       run: |
-        # YOU CAN CHANGE THE PASSWORD BELOW to whatever you want
+        # YOU CAN CHANGE THE PASSWORD BELOW
         $password = ConvertTo-SecureString -AsPlainText "DarkMatter123!" -Force
         Set-LocalUser -Name "runneradmin" -Password $password
 
-    # 3. Download and Extract Bore (The tunneling tool)
+    # 3. Download and Extract Bore
     - name: ⬇️ Install Bore
       run: |
         Invoke-WebRequest -Uri "https://github.com/ekzhang/bore/releases/download/v0.5.0/bore-v0.5.0-x86_64-pc-windows-msvc.zip" -OutFile "bore.zip"
         Expand-Archive bore.zip -DestinationPath .
 
-    # 4. Start the Tunnel and Print the Address
+    # 4. Start Tunnel (FIXED STEP)
     - name: 🚀 Start Tunnel & Get Address
       run: |
-        Write-Host "------------------------------------------------------------------"
         Write-Host "Starting Tunnel..."
         
-        # Start bore in the background, piping output to a log file so we can read the port
+        # Start bore in background
         Start-Process -FilePath ".\bore.exe" -ArgumentList "local 3389 --to bore.pub" -RedirectStandardOutput "bore.log" -PassThru
         
-        # Wait a few seconds for it to connect
+        # Wait 5 seconds for connection
         Start-Sleep -Seconds 5
         
-        # Read the log to find the remote port
-        $log = Get-Content "bore.log"
-        Write-Host "DEBUG LOG: $log"
-        
-        # Extract the port number using regex
-        # The output usually looks like: "listening at bore.pub:45123"
-        if ($log -match "bore.pub:(\d+)") {
-            $port = $matches[1]
-            Write-Host " "
-            Write-Host "🎉 SUCCESS! YOUR RDP ADDRESS IS BELOW:" -ForegroundColor Green
-            Write-Host "------------------------------------------------------------------"
-            Write-Host "Server: bore.pub" -ForegroundColor Cyan
-            Write-Host "Port:   $port" -ForegroundColor Cyan
-            Write-Host "Full Address: bore.pub:$port" -ForegroundColor Yellow
-            Write-Host "User: runneradmin"
-            Write-Host "Pass: DarkMatter123!"
-            Write-Host "------------------------------------------------------------------"
+        # FIXED: Use -Raw to read file as single string, not an array
+        if (Test-Path "bore.log") {
+            $log = Get-Content "bore.log" -Raw
+            Write-Host "DEBUG LOG OUTPUT:"
+            Write-Host $log
+            
+            if ($log -match "bore.pub:(\d+)") {
+                $port = $matches[1]
+                Write-Host " "
+                Write-Host "------------------------------------------------------------------"
+                Write-Host "🎉 SUCCESS! RDP ADDRESS:" -ForegroundColor Green
+                Write-Host "Address: bore.pub:$port" -ForegroundColor Yellow
+                Write-Host "User:    runneradmin"
+                Write-Host "Pass:    DarkMatter123!"
+                Write-Host "------------------------------------------------------------------"
+            } else {
+                Write-Host "⚠️ Port not found in logs automatically. Check the DEBUG LOG OUTPUT above for the port number." -ForegroundColor Red
+            }
         } else {
-            Write-Host "Could not find port in logs. Check the raw logs above."
+             Write-Host "bore.log not found. Tunnel failed to start."
         }
 
-    # 5. Keep the machine alive (Anti-exit loop)
+    # 5. Keep Alive
     - name: 🛑 Keep Alive
       run: |
         Write-Host "Session is active. Connect now!"
