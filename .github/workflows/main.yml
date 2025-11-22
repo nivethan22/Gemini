@@ -1,4 +1,4 @@
-name: Chrome Remote Desktop (Pro)
+name: Chrome Remote Desktop (Fixed)
 
 on:
   workflow_dispatch:
@@ -6,6 +6,10 @@ on:
       auth_code:
         description: 'Paste the Windows (PowerShell) command from Google Headless:'
         required: true
+      pin:
+        description: 'Set your 6-digit PIN (Default: 123456)'
+        required: false
+        default: '123456'
 
 jobs:
   rdp_session:
@@ -15,50 +19,50 @@ jobs:
     # 1. Setup Environment
     - name: ⚙️ Setup Environment
       run: |
-        # Disable the "Server Manager" popup usually seen on Server 2019/2022
         Set-ItemProperty -Path 'HKLM:\SOFTWARE\Microsoft\ServerManager' -Name 'DoNotOpenServerManagerAtLogon' -Value 1
-        
-        # Enable Audio Service (Optional, but good for Moonlight/Media)
         Start-Service "Audiosrv"
         Set-Service "Audiosrv" -StartupType Automatic
 
-    # 2. Install Chrome Remote Desktop
+    # 2. Install Chrome Remote Desktop (FIXED LINK)
     - name: ⬇️ Install Chrome Remote Desktop
       run: |
         Write-Host "Downloading MSI..."
-        Invoke-WebRequest -Uri "https://dl.google.com/hosted/chromeremotedesktop/chromeremotedesktop.msi" -OutFile "crd.msi"
+        # The URL below is the official static link for the Windows Installer
+        $url = "https://dl.google.com/edgedl/chrome-remote-desktop/chromeremotedesktophost.msi"
+        Invoke-WebRequest -Uri $url -OutFile "crd.msi"
         
         Write-Host "Installing..."
         Start-Process -FilePath "msiexec.exe" -ArgumentList "/i crd.msi /qn" -Wait
 
-    # 3. Initialize the Host (The Magic Step)
+    # 3. Initialize the Host
     - name: 🚀 Start CRD Host
       env:
-        # If you didn't make a secret, it defaults to 123456
-        MY_PIN: ${{ secrets.CRD_PIN || '123456' }}
+        MY_PIN: ${{ inputs.pin }}
         INPUT_CMD: ${{ inputs.auth_code }}
       run: |
-        # 1. Clean the input to get just the OAuth Code
-        # The user might paste ".\remoting_start_host.exe --code=4/xxxx" or just "4/xxxx"
-        # We look for the pattern "4/" followed by any non-quote characters
+        # Extract the OAuth Code using Regex to prevent copy-paste errors
         if ($Env:INPUT_CMD -match '(4/[^"\s]+)') {
             $code = $matches[1]
             Write-Host "✅ OAuth Code detected: $code"
         } else {
-            Write-Error "❌ Could not find a valid code starting with '4/'. Did you paste the right command?"
+            Write-Error "❌ Could not find a valid code starting with '4/'. Please check your input."
             exit 1
         }
 
-        # 2. Find the CRD Host Binary (Path varies by version)
-        $binary = Get-ChildItem "C:\Program Files (x86)\Google\Chrome Remote Desktop" -Recurse -Filter "remoting_start_host.exe" | Select-Object -ExpandProperty FullName -First 1
+        # Find the installed binary (Path is standard)
+        $binary = "C:\Program Files (x86)\Google\Chrome Remote Desktop\CurrentVersion\remoting_start_host.exe"
         
-        if (-not $binary) {
-            Write-Error "❌ CRD Binary not found."
-            exit 1
+        if (-not (Test-Path $binary)) {
+            Write-Host "⚠️ Standard path not found, searching..."
+            $binary = Get-ChildItem "C:\Program Files (x86)\Google\Chrome Remote Desktop" -Recurse -Filter "remoting_start_host.exe" | Select-Object -ExpandProperty FullName -First 1
         }
 
-        # 3. Execute the Registration
-        # We append the redirect URL and the PIN automatically
+        if (-not $binary) {
+             Write-Error "❌ CRD Binary not found. Installation failed."
+             exit 1
+        }
+
+        # Run the Registration
         Write-Host "🚀 Registering Runner..."
         & $binary --code=$code --redirect-url="https://remotedesktop.google.com/_/oauthredirect" --name="GitHub-VPS" --pin=$Env:MY_PIN
         
@@ -68,7 +72,7 @@ jobs:
         Write-Host "🔑 PIN: $Env:MY_PIN"
         Write-Host "--------------------------------------------------------"
 
-    # 4. Anti-Exit Loop
+    # 4. Keep Alive
     - name: 🛑 Keep Alive
       run: |
         while ($true) { Start-Sleep -Seconds 60 }
