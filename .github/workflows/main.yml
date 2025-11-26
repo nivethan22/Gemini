@@ -15,8 +15,8 @@ on:
         description: "Paste the Auth Code (starts with 4/...) or full command"
         required: true
         default: ""
-      TAILSCALE_AUTHKEY:
-        description: "Tailscale Auth Key (starts with tskey-...). Optional."
+      ZEROTIER_NETWORK_ID:
+        description: "Your 16-digit ZeroTier Network ID. Optional."
         required: false
         default: ""
 
@@ -29,7 +29,7 @@ jobs:
       INSTANCE_ID: ${{ github.event.inputs.INSTANCE }}
       CRD_PIN: ${{ github.event.inputs.CRD_PIN }}
       CRD_TOKEN: ${{ github.event.inputs.CRD_TOKEN }}
-      TAILSCALE_AUTHKEY: ${{ github.event.inputs.TAILSCALE_AUTHKEY }}
+      ZEROTIER_NETWORK_ID: ${{ github.event.inputs.ZEROTIER_NETWORK_ID }}
       REPO: ${{ github.repository }}
       WORKFLOW_FILE: "enigmano-Win-11-128-Cores.yml"
       DEPLOYMENT_ID: ${{ github.run_id }}
@@ -46,23 +46,24 @@ jobs:
         shell: pwsh
         run: |
           if (-not $env:CRD_TOKEN) { Write-Error "❌ Missing CRD Token." ; exit 1 }
-          if (-not $env:TAILSCALE_AUTHKEY) { Write-Warning "⚠️ Skipping Tailscale." }
+          if (-not $env:ZEROTIER_NETWORK_ID) { Write-Warning "⚠️ Skipping ZeroTier." }
           Write-Host "✅ Inputs validated."
 
+      ---
 
       - name: 💻 Install Virtual Display Driver (Fixes Lag)
         shell: pwsh
         run: |
           Write-Host "🌐 Downloading and Installing ViGEm Bus Driver (Virtual Display)..."
-          $url = "https://github.com/ViGEm/ViGEmBus/releases/download/v1.17.333.0/ViGEmBus_Setup_1.17.333.0.exe" # Stable driver for headless sessions
+          $url = "https://github.com/ViGEm/ViGEmBus/releases/download/v1.17.333.0/ViGEmBus_Setup_1.17.333.0.exe"
           $output = "$env:TEMP\vigem.exe"
           Invoke-WebRequest -Uri $url -OutFile $output -UseBasicParsing
 
           Write-Host "💾 Installing ViGEm..."
           Start-Process -FilePath "$output" -ArgumentList "/S" -Wait # /S is silent install
-
-          Write-Host "✅ Virtual Display Driver installed. This prevents display lag/sleep."
+          Write-Host "✅ Virtual Display Driver installed."
           
+      ---
 
       - name: ⚙️ Install & Configure Chrome Remote Desktop
         shell: pwsh
@@ -91,57 +92,69 @@ jobs:
 
           Write-Host "✅ CRD setup complete."
           
+      ---
 
       - name: ☀️ Install & Configure Sunshine (for Moonlight)
         shell: pwsh
         run: |
           Write-Host "🌐 Downloading Sunshine (Streaming Server for Moonlight)..."
-          # Get the latest stable release of Sunshine
+          # Using a portable ZIP to avoid service install complexities
           $url = "https://github.com/LizardByte/Sunshine/releases/download/v0.22.0/sunshine-windows-portable.zip"
           $zipFile = "$env:TEMP\sunshine.zip"
           $installPath = "C:\Sunshine"
 
           Invoke-WebRequest -Uri $url -OutFile $zipFile -UseBasicParsing
-          
-          Write-Host "💾 Extracting Sunshine..."
           Expand-Archive -Path $zipFile -DestinationPath $installPath -Force
 
           Write-Host "🔥 Starting Sunshine Service..."
-          # Start the server (Moonlight client can connect after this)
-          Start-Process -FilePath "$installPath\sunshine.exe" -ArgumentList "-d" -Wait -PassThru # -d runs in background
+          # Start the server in the background
+          Start-Process -FilePath "$installPath\sunshine.exe" -ArgumentList "-d" -Wait -PassThru 
           
           Write-Host "✅ Sunshine (Moonlight Server) is now running."
-          Write-Host "   You can access the UI via CRD or Tailscale at https://127.0.0.1:47990/"
           
+      ---
 
-      - name: 🦎 Install & Connect Tailscale
-        if: ${{ github.event.inputs.TAILSCALE_AUTHKEY != '' }}
+      - name: 🌍 Install & Connect ZeroTier
+        if: ${{ github.event.inputs.ZEROTIER_NETWORK_ID != '' }}
         shell: pwsh
         run: |
-          Write-Host "🌐 Downloading Tailscale..."
-          $url = "https://pkgs.tailscale.com/stable/tailscale-setup.exe"
-          $output = "$env:TEMP\tailscale-setup.exe"
+          Write-Host "🌐 Downloading ZeroTier One..."
+          $url = "https://download.zerotier.com/dist/ZeroTier%20One.msi"
+          $output = "$env:TEMP\zerotier.msi"
           Invoke-WebRequest -Uri $url -OutFile $output -UseBasicParsing
-          Start-Process -FilePath "$output" -ArgumentList "/quiet" -Wait
 
-          Write-Host "🔑 Authenticating Tailscale..."
-          $tsPath = "C:\Program Files\Tailscale\tailscale.exe"
+          Write-Host "💾 Installing ZeroTier..."
+          # Silent install: /i is install, /qn is quiet no UI, /norestart
+          Start-Process msiexec.exe -ArgumentList "/i `"$output`" /qn /norestart" -Wait
+
+          Write-Host "🔗 Joining ZeroTier Network..."
+          # Path to the CLI executable after installation
+          $ztPath = "C:\Program Files\ZeroTier\One\zerotier-cli.exe"
           
-          if (Test-Path $tsPath) {
-             & $tsPath up --authkey $env:TAILSCALE_AUTHKEY --hostname "EnigMano-$env:INSTANCE_ID" --unattended
-             Write-Host "✅ Tailscale Connected!"
-             & $tsPath ip -4
+          if (Test-Path $ztPath) {
+             # Join the network
+             & $ztPath join $env:ZEROTIER_NETWORK_ID
+             
+             # Wait a moment for network assignment
+             Start-Sleep -Seconds 10
+             
+             Write-Host "✅ ZeroTier Joined. You must authorize this node in your ZeroTier Central console."
+             Write-Host "   Node Status:"
+             & $ztPath info
           } else {
-             Write-Error "❌ Tailscale installation failed."
+             Write-Error "❌ ZeroTier installation failed."
           }
           
+      ---
 
       - name: 🏃 Keep Runner Alive
         shell: pwsh
         run: |
           Write-Host "✅ Runner is active. Session is ready."
-          Write-Host "👉 Access via CRD: https://remotedesktop.google.com/access"
-          Write-Host "👉 Access via Moonlight: Use the Tailscale IP (if provided)."
+          Write-Host "👉 Connect via CRD: https://remotedesktop.google.com/access"
+          if ($env:ZEROTIER_NETWORK_ID) {
+             Write-Host "👉 Connect Sunshine/Moonlight via ZeroTier IP (Authorize the node first!)."
+          }
           
           $seconds = 21600 # 6 hours
           while ($seconds -gt 0) {
