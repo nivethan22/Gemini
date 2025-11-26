@@ -7,6 +7,16 @@ on:
         description: "Instance number to deploy (e.g., 1, 2, 3...)"
         required: true
         default: "1"
+      # New input for the Chrome Remote Desktop PIN
+      CRD_PIN:
+        description: "Chrome Remote Desktop PIN (6+ digits)"
+        required: true
+        default: ""
+      # New input for the Chrome Remote Desktop Refresh Token
+      CRD_TOKEN:
+        description: "Chrome Remote Desktop Refresh Token"
+        required: true
+        default: ""
 
 jobs:
   deploy-enigmano:
@@ -15,9 +25,9 @@ jobs:
 
     env:
       INSTANCE_ID: ${{ github.event.inputs.INSTANCE }}
-      # WARNING: Hardcoding sensitive values is a security risk.
-      CRD_PIN: "YOUR_PIN_HERE" # <<< REPLACE THIS WITH YOUR 6-DIGIT PIN
-      CRD_TOKEN: "YOUR_CRD_TOKEN_HERE" # <<< REPLACE THIS WITH YOUR LONG REFRESH TOKEN
+      # Now pulling CRD credentials from workflow inputs instead of secrets
+      CRD_PIN: ${{ github.event.inputs.CRD_PIN }}
+      CRD_TOKEN: ${{ github.event.inputs.CRD_TOKEN }}
       REPO: ${{ github.repository }}
       WORKFLOW_FILE: "enigmano-Win-11-128-Cores.yml"
       DEPLOYMENT_ID: ${{ github.run_id }}
@@ -35,14 +45,18 @@ jobs:
           Write-Host "🆔 Deployment ID         : $env:DEPLOYMENT_ID"
           Write-Host "==============================================="
 
-      - name: 🔐 Check for Placeholder Values (SECURITY WARNING)
+      - name: 🔐 Validate Inputs
         shell: pwsh
         run: |
-          if ($env:CRD_PIN -eq "YOUR_PIN_HERE" -or $env:CRD_TOKEN -eq "YOUR_CRD_TOKEN_HERE") {
-            Write-Error "❌ CRD setup failed: You must replace the placeholder values (YOUR_PIN_HERE, YOUR_CRD_TOKEN_HERE) with your actual PIN and Token, or use GitHub Secrets instead."
+          if (-not $env:CRD_PIN) {
+            Write-Error "❌ Missing Chrome Remote Desktop PIN"
             exit 1
           }
-          Write-Host "✅ Using hardcoded CRD values. Proceeding with caution."
+          if (-not $env:CRD_TOKEN) {
+            Write-Error "❌ Missing Chrome Remote Desktop Token"
+            exit 1
+          }
+          Write-Host "✅ All required inputs validated successfully"
 
       - name: ⚙️ Install & Configure Chrome Remote Desktop
         shell: pwsh
@@ -60,4 +74,49 @@ jobs:
           `$output = "crd.msi"
           Invoke-WebRequest -Uri `$url -OutFile `$output -UseBasicParsing
 
-          Write
+          Write-Host "💾 Installing CRD Host..."
+          Start-Process msiexec.exe -ArgumentList "/i `"`$output`" /qn" -Wait
+
+          Write-Host "🔑 Configuring CRD Host..."
+          `$regPath = "HKLM:\SOFTWARE\Policies\Google\Chrome Remote Desktop"
+          if (!(Test-Path `$regPath)) {
+              New-Item -Path `$regPath -Force
+          }
+          
+          Set-ItemProperty -Path `$regPath -Name "RemoteAccessHostFirewallTraversal" -Value 1
+          Set-ItemProperty -Path `$regPath -Name "RemoteAccessHostAllowRelayedConnection" -Value 1
+          Set-ItemProperty -Path `$regPath -Name "RemoteAccessHostAllowClientPairing" -Value 1
+          
+          # Set the Refresh Token
+          # NOTE: The CRD_TOKEN is pulled from the workflow input
+          Set-ItemProperty -Path `$regPath -Name "RemoteAccessHostRefreshToken" -Value `$env:CRD_TOKEN
+          
+          # Set the PIN
+          # NOTE: The CRD_PIN is pulled from the workflow input
+          `$pinHash = Get-CrdPinHash -pin `$env:CRD_PIN
+          Set-ItemProperty -Path `$regPath -Name "RemoteAccessHostPinHash" -Value `$pinHash
+          
+          Write-Host "🚀 Starting CRD Service..."
+          Start-Service -Name "chromoting"
+          
+          Write-Host "✅ CRD setup complete. You can now connect."
+          "@
+
+          $script | Out-File "setup_crd.ps1" -Encoding "utf8"
+          powershell.exe -ExecutionPolicy Bypass -File ".\setup_crd.ps1"
+
+      - name: 🏃 Keep Runner Alive
+        shell: pwsh
+        run: |
+          Write-Host "✅ Runner is active. You can connect via Chrome Remote Desktop."
+          Write-Host "This job will stay alive for approximately 5 hours and 50 minutes."
+          Start-Sleep -Seconds 21000
+          Write-Host "Job timeout reached. Shutting down."
+
+      - name: 💠 Final Status
+        if: always()
+        shell: pwsh
+        run: |
+          Write-Host "✅ CRD session for Instance $env:INSTANCE_ID finished."
+          Write-Host "🔋 Powered by: SHAHZAIB-YT"
+          Write-Host "🏁 CRD deployment complete."
