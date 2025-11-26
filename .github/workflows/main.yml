@@ -60,50 +60,47 @@ jobs:
 
       - name: ⚙️ Install & Configure Chrome Remote Desktop
         shell: pwsh
+        # The script is now run directly using the YAML multi-line feature (|)
+        # This avoids the complex escaping issues of the PowerShell here-string (")
         run: |
-          $script = @"
-          function Get-CrdPinHash([string]`$pin) {
-              `$bytes = [System.Text.Encoding]::UTF8.GetBytes(`$pin)
-              `$sha256 = [System.Security.Cryptography.SHA256]::Create()
-              `$hash = `$sha256.ComputeHash(`$bytes)
-              return [System.Convert]::ToBase64String(`$hash)
+          function Get-CrdPinHash([string]$pin) {
+              $bytes = [System.Text.Encoding]::UTF8.GetBytes($pin)
+              $sha256 = [System.Security.Cryptography.SHA256]::Create()
+              $hash = $sha256.ComputeHash($bytes)
+              return [System.Convert]::ToBase64String($hash)
           }
 
           Write-Host "🌐 Downloading CRD Host..."
-          `$url = "https://dl.google.com/dl/edgedl/chrome-remote-desktop/chromeremotedesktophost.msi"
-          `$output = "crd.msi"
-          Invoke-WebRequest -Uri `$url -OutFile `$output -UseBasicParsing
+          $url = "https://dl.google.com/dl/edgedl/chrome-remote-desktop/chromeremotedesktophost.msi"
+          $output = "crd.msi"
+          Invoke-WebRequest -Uri $url -OutFile $output -UseBasicParsing
 
           Write-Host "💾 Installing CRD Host..."
-          Start-Process msiexec.exe -ArgumentList "/i `"`$output`" /qn" -Wait
+          Start-Process msiexec.exe -ArgumentList "/i `"$output`" /qn" -Wait
 
           Write-Host "🔑 Configuring CRD Host..."
-          `$regPath = "HKLM:\SOFTWARE\Policies\Google\Chrome Remote Desktop"
-          if (!(Test-Path `$regPath)) {
-              New-Item -Path `$regPath -Force
+          $regPath = "HKLM:\SOFTWARE\Policies\Google\Chrome Remote Desktop"
+          if (!(Test-Path $regPath)) {
+              New-Item -Path $regPath -Force
           }
           
-          Set-ItemProperty -Path `$regPath -Name "RemoteAccessHostFirewallTraversal" -Value 1
-          Set-ItemProperty -Path `$regPath -Name "RemoteAccessHostAllowRelayedConnection" -Value 1
-          Set-ItemProperty -Path `$regPath -Name "RemoteAccessHostAllowClientPairing" -Value 1
+          Set-ItemProperty -Path $regPath -Name "RemoteAccessHostFirewallTraversal" -Value 1
+          Set-ItemProperty -Path $regPath -Name "RemoteAccessHostAllowRelayedConnection" -Value 1
+          Set-ItemProperty -Path $regPath -Name "RemoteAccessHostAllowClientPairing" -Value 1
           
           # Set the Refresh Token
-          # NOTE: The CRD_TOKEN is pulled from the workflow input
-          Set-ItemProperty -Path `$regPath -Name "RemoteAccessHostRefreshToken" -Value `$env:CRD_TOKEN
+          # NOTE: $env:CRD_TOKEN is directly accessible here
+          Set-ItemProperty -Path $regPath -Name "RemoteAccessHostRefreshToken" -Value $env:CRD_TOKEN
           
           # Set the PIN
-          # NOTE: The CRD_PIN is pulled from the workflow input
-          `$pinHash = Get-CrdPinHash -pin `$env:CRD_PIN
-          Set-ItemProperty -Path `$regPath -Name "RemoteAccessHostPinHash" -Value `$pinHash
+          # NOTE: $env:CRD_PIN is directly accessible here
+          $pinHash = Get-CrdPinHash -pin $env:CRD_PIN
+          Set-ItemProperty -Path $regPath -Name "RemoteAccessHostPinHash" -Value $pinHash
           
           Write-Host "🚀 Starting CRD Service..."
           Start-Service -Name "chromoting"
           
           Write-Host "✅ CRD setup complete. You can now connect."
-          "@
-
-          $script | Out-File "setup_crd.ps1" -Encoding "utf8"
-          powershell.exe -ExecutionPolicy Bypass -File ".\setup_crd.ps1"
 
       - name: 🏃 Keep Runner Alive
         shell: pwsh
