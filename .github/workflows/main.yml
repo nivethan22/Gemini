@@ -97,6 +97,9 @@ jobs:
           $pinHash = Get-CrdPinHash -pin $env:CRD_PIN
           Set-ItemProperty -Path $regPath -Name "RemoteAccessHostPinHash" -Value $pinHash
           
+          Write-Host "⏳ Waiting 5 seconds for service registration..."
+          Start-Sleep -Seconds 5 # Delay to ensure the service is fully registered before starting
+          
           Write-Host "🚀 Starting CRD Service..."
           Start-Service -Name "chromoting"
           
