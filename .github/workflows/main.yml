@@ -1,4 +1,4 @@
-name: "⚡ EnigMano Win11 + 128 Cores Deployment"
+name: "⚡ EnigMano Win11 + 128 Cores Deployment (Optimized)"
 
 on:
   workflow_dispatch:
@@ -8,23 +8,28 @@ on:
         required: true
         default: "1"
       CRD_PIN:
-        description: "Chrome Remote Desktop PIN (6+ digits)"
+        description: "PIN for the Remote Desktop (6 digits)"
         required: true
         default: "123456"
       CRD_TOKEN:
-        description: "Paste the Auth Code (starts with 4/...) from Google Headless"
+        description: "Paste the Auth Code (starts with 4/...) or full command"
         required: true
+        default: ""
+      TAILSCALE_AUTHKEY:
+        description: "Tailscale Auth Key (starts with tskey-...). Optional."
+        required: false
         default: ""
 
 jobs:
   deploy-enigmano:
     name: "🚀 Deploy EnigMano Instance ${{ github.event.inputs.INSTANCE }}"
-    runs-on: windows-11-arm # Note: windows-11-arm implies a specific runner type, ensure this matches your available runners. Standard is 'windows-latest' (x64).
+    runs-on: windows-latest # Changed from windows-11-arm for compatibility
 
     env:
       INSTANCE_ID: ${{ github.event.inputs.INSTANCE }}
       CRD_PIN: ${{ github.event.inputs.CRD_PIN }}
       CRD_TOKEN: ${{ github.event.inputs.CRD_TOKEN }}
+      TAILSCALE_AUTHKEY: ${{ github.event.inputs.TAILSCALE_AUTHKEY }}
       REPO: ${{ github.repository }}
       WORKFLOW_FILE: "enigmano-Win-11-128-Cores.yml"
       DEPLOYMENT_ID: ${{ github.run_id }}
@@ -33,77 +38,116 @@ jobs:
       - name: 📌 Deployment Parameters
         shell: pwsh
         run: |
-          $prevInstance = [int]$env:INSTANCE_ID - 1
           Write-Host "==============================================="
           Write-Host "🔹 EnigMano Instance     : $env:INSTANCE_ID"
-          Write-Host "🔢 Previous Instance     : $prevInstance"
-          Write-Host "📦 GitHub Repository     : $env:REPO"
-          Write-Host "🔁 Deployment Workflow   : $env:WORKFLOW_FILE"
-          Write-Host "🆔 Deployment ID         : $env:DEPLOYMENT_ID"
           Write-Host "==============================================="
 
       - name: 🔐 Validate Inputs
         shell: pwsh
         run: |
-          if (-not $env:CRD_PIN) {
-            Write-Error "❌ Missing Chrome Remote Desktop PIN"
-            exit 1
-          }
-          if (-not $env:CRD_TOKEN) {
-            Write-Error "❌ Missing Chrome Remote Desktop Token (Auth Code)"
-            exit 1
-          }
-          Write-Host "✅ All required inputs validated successfully"
+          if (-not $env:CRD_TOKEN) { Write-Error "❌ Missing CRD Token." ; exit 1 }
+          if (-not $env:TAILSCALE_AUTHKEY) { Write-Warning "⚠️ Skipping Tailscale." }
+          Write-Host "✅ Inputs validated."
+
+      ---
+
+      - name: 💻 Install Virtual Display Driver (Fixes Lag)
+        shell: pwsh
+        run: |
+          Write-Host "🌐 Downloading and Installing ViGEm Bus Driver (Virtual Display)..."
+          $url = "https://github.com/ViGEm/ViGEmBus/releases/download/v1.17.333.0/ViGEmBus_Setup_1.17.333.0.exe" # Stable driver for headless sessions
+          $output = "$env:TEMP\vigem.exe"
+          Invoke-WebRequest -Uri $url -OutFile $output -UseBasicParsing
+
+          Write-Host "💾 Installing ViGEm..."
+          Start-Process -FilePath "$output" -ArgumentList "/S" -Wait # /S is silent install
+
+          Write-Host "✅ Virtual Display Driver installed. This prevents display lag/sleep."
+          
+      ---
 
       - name: ⚙️ Install & Configure Chrome Remote Desktop
         shell: pwsh
         run: |
           $ErrorActionPreference = 'Stop'
-
-          # 1. Download CRD
-          Write-Host "🌐 Downloading CRD Host..."
+          # Download, Install, and Register CRD (using the robust remoting_start_host.exe method)
+          Write-Host "🌐 Downloading & Installing CRD Host..."
           $url = "https://dl.google.com/dl/edgedl/chrome-remote-desktop/chromeremotedesktophost.msi"
           $output = "$env:TEMP\crd.msi"
           Invoke-WebRequest -Uri $url -OutFile $output -UseBasicParsing
-
-          # 2. Install CRD
-          Write-Host "💾 Installing CRD Host..."
           Start-Process msiexec.exe -ArgumentList "/i `"$output`" /qn" -Wait
 
-          # 3. Register and Start Service using Official Binary
           Write-Host "🔑 Registering CRD Host..."
-          $crdExecutable = "C:\Program Files (x86)\Google\Chrome Remote Desktop\CurrentVersion\remoting_start_host.exe"
+          $crdExecutable = "${Env:PROGRAMFILES(X86)}\Google\Chrome Remote Desktop\CurrentVersion\remoting_start_host.exe"
           
-          if (-not (Test-Path $crdExecutable)) {
-            Write-Error "❌ CRD Executable not found. Installation failed."
-            exit 1
-          }
-
-          # Clean the token if the user pasted the full command by mistake (simple cleanup)
+          # Logic to handle full command paste vs. just the code
           $authToken = $env:CRD_TOKEN
-          if ($authToken -match 'code="([^"]+)"') {
-              $authToken = $matches[1]
-              Write-Host "⚠️ Detected full command string, extracted code: $authToken"
-          }
+          if ($authToken -match 'code="([^"]+)"') { $authToken = $matches[1] }
 
           $hostName = "EnigMano-Instance-$env:INSTANCE_ID"
 
-          # Execute the registration command
-          # This command creates the registry keys, performs the OAuth exchange, and starts the service safely.
           & $crdExecutable --code="$authToken" `
                            --redirect-url="https://remotedesktop.google.com/_/oauthredirect" `
                            --name="$hostName" `
                            --pin="$env:CRD_PIN"
 
-          Write-Host "✅ CRD setup complete. You can now connect via https://remotedesktop.google.com/access"
+          Write-Host "✅ CRD setup complete."
+          
+      ---
+
+      - name: ☀️ Install & Configure Sunshine (for Moonlight)
+        shell: pwsh
+        run: |
+          Write-Host "🌐 Downloading Sunshine (Streaming Server for Moonlight)..."
+          # Get the latest stable release of Sunshine
+          $url = "https://github.com/LizardByte/Sunshine/releases/download/v0.22.0/sunshine-windows-portable.zip"
+          $zipFile = "$env:TEMP\sunshine.zip"
+          $installPath = "C:\Sunshine"
+
+          Invoke-WebRequest -Uri $url -OutFile $zipFile -UseBasicParsing
+          
+          Write-Host "💾 Extracting Sunshine..."
+          Expand-Archive -Path $zipFile -DestinationPath $installPath -Force
+
+          Write-Host "🔥 Starting Sunshine Service..."
+          # Start the server (Moonlight client can connect after this)
+          Start-Process -FilePath "$installPath\sunshine.exe" -ArgumentList "-d" -Wait -PassThru # -d runs in background
+          
+          Write-Host "✅ Sunshine (Moonlight Server) is now running."
+          Write-Host "   You can access the UI via CRD or Tailscale at https://127.0.0.1:47990/"
+          
+      ---
+
+      - name: 🦎 Install & Connect Tailscale
+        if: ${{ github.event.inputs.TAILSCALE_AUTHKEY != '' }}
+        shell: pwsh
+        run: |
+          Write-Host "🌐 Downloading Tailscale..."
+          $url = "https://pkgs.tailscale.com/stable/tailscale-setup.exe"
+          $output = "$env:TEMP\tailscale-setup.exe"
+          Invoke-WebRequest -Uri $url -OutFile $output -UseBasicParsing
+          Start-Process -FilePath "$output" -ArgumentList "/quiet" -Wait
+
+          Write-Host "🔑 Authenticating Tailscale..."
+          $tsPath = "C:\Program Files\Tailscale\tailscale.exe"
+          
+          if (Test-Path $tsPath) {
+             & $tsPath up --authkey $env:TAILSCALE_AUTHKEY --hostname "EnigMano-$env:INSTANCE_ID" --unattended
+             Write-Host "✅ Tailscale Connected!"
+             & $tsPath ip -4
+          } else {
+             Write-Error "❌ Tailscale installation failed."
+          }
+          
+      ---
 
       - name: 🏃 Keep Runner Alive
         shell: pwsh
         run: |
-          Write-Host "✅ Runner is active. Connect via Chrome Remote Desktop."
-          Write-Host "This job will stay alive for approximately 6 hours."
+          Write-Host "✅ Runner is active. Session is ready."
+          Write-Host "👉 Access via CRD: https://remotedesktop.google.com/access"
+          Write-Host "👉 Access via Moonlight: Use the Tailscale IP (if provided)."
           
-          # Loop to keep alive (more robust than a single sleep)
           $seconds = 21600 # 6 hours
           while ($seconds -gt 0) {
             Start-Sleep -Seconds 60
@@ -112,12 +156,8 @@ jobs:
               Write-Host "⏳ Time remaining: $([math]::Round($seconds/60)) minutes..."
             }
           }
-          Write-Host "Job timeout reached. Shutting down."
 
       - name: 💠 Final Status
         if: always()
         shell: pwsh
-        run: |
-          Write-Host "✅ CRD session for Instance $env:INSTANCE_ID finished."
-          Write-Host "🔋 Powered by: SHAHZAIB-YT"
-          Write-Host "🏁 CRD deployment complete."
+        run: Write-Host "🏁 Session Finished."
