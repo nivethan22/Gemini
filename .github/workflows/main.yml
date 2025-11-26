@@ -1,4 +1,4 @@
-name: "⚡ EnigMano Win11 + 128 Cores Deployment (Optimized)"
+name: "⚡ EnigMano Win11 + 128 Cores Deployment (FIXED)"
 
 on:
   workflow_dispatch:
@@ -12,7 +12,7 @@ on:
         required: true
         default: "123456"
       CRD_TOKEN:
-        description: "Paste the Auth Code (starts with 4/...) or full command"
+        description: "Paste the CRD Auth Code (starts with 4/...) or full command"
         required: true
         default: ""
       ZEROTIER_NETWORK_ID:
@@ -23,7 +23,7 @@ on:
 jobs:
   deploy-enigmano:
     name: "🚀 Deploy EnigMano Instance ${{ github.event.inputs.INSTANCE }}"
-    runs-on: windows-latest # Changed from windows-11-arm for compatibility
+    runs-on: windows-latest
 
     env:
       INSTANCE_ID: ${{ github.event.inputs.INSTANCE }}
@@ -49,37 +49,36 @@ jobs:
           if (-not $env:ZEROTIER_NETWORK_ID) { Write-Warning "⚠️ Skipping ZeroTier." }
           Write-Host "✅ Inputs validated."
 
-      
-
       - name: 💻 Install Virtual Display Driver (Fixes Lag)
         shell: pwsh
         run: |
-          Write-Host "🌐 Downloading and Installing ViGEm Bus Driver (Virtual Display)..."
-          $url = "https://github.com/ViGEm/ViGEmBus/releases/download/v1.17.333.0/ViGEmBus_Setup_1.17.333.0.exe"
-          $output = "$env:TEMP\vigem.exe"
-          Invoke-WebRequest -Uri $url -OutFile $output -UseBasicParsing
-
-          Write-Host "💾 Installing ViGEm..."
-          Start-Process -FilePath "$output" -ArgumentList "/S" -Wait # /S is silent install
-          Write-Host "✅ Virtual Display Driver installed."
+          $ErrorActionPreference = 'Stop'
+          Write-Host "🌐 Downloading ViGEm Bus Driver (Virtual Display)..."
+          $driverUrl = "https://github.com/ViGEm/ViGEmBus/releases/download/v1.17.333.0/ViGEmBus_Setup_1.17.333.0.exe"
+          $driverOutput = "$env:TEMP\vigem_driver.exe"
           
-      
+          Invoke-WebRequest -Uri $driverUrl -OutFile $driverOutput -UseBasicParsing
+          
+          Write-Host "💾 Installing ViGEm Driver silently..."
+          Start-Process -FilePath "$driverOutput" -ArgumentList "/S" -Wait 
+          
+          Write-Host "✅ Virtual Display Driver installed successfully."
 
-      - name: ⚙️ Install & Configure Chrome Remote Desktop
+      - name: ⚙️ Install & Configure Chrome Remote Desktop 
         shell: pwsh
         run: |
           $ErrorActionPreference = 'Stop'
-          # Download, Install, and Register CRD (using the robust remoting_start_host.exe method)
+          # 1. Download & Install CRD
           Write-Host "🌐 Downloading & Installing CRD Host..."
           $url = "https://dl.google.com/dl/edgedl/chrome-remote-desktop/chromeremotedesktophost.msi"
           $output = "$env:TEMP\crd.msi"
           Invoke-WebRequest -Uri $url -OutFile $output -UseBasicParsing
           Start-Process msiexec.exe -ArgumentList "/i `"$output`" /qn" -Wait
 
+          # 2. Register CRD using the binary (CONFIRMED WORKING)
           Write-Host "🔑 Registering CRD Host..."
           $crdExecutable = "${Env:PROGRAMFILES(X86)}\Google\Chrome Remote Desktop\CurrentVersion\remoting_start_host.exe"
           
-          # Logic to handle full command paste vs. just the code
           $authToken = $env:CRD_TOKEN
           if ($authToken -match 'code="([^"]+)"') { $authToken = $matches[1] }
 
@@ -92,13 +91,10 @@ jobs:
 
           Write-Host "✅ CRD setup complete."
           
-      
-
       - name: ☀️ Install & Configure Sunshine (for Moonlight)
         shell: pwsh
         run: |
-          Write-Host "🌐 Downloading Sunshine (Streaming Server for Moonlight)..."
-          # Using a portable ZIP to avoid service install complexities
+          Write-Host "🌐 Downloading Sunshine (Streaming Server)..."
           $url = "https://github.com/LizardByte/Sunshine/releases/download/v0.22.0/sunshine-windows-portable.zip"
           $zipFile = "$env:TEMP\sunshine.zip"
           $installPath = "C:\Sunshine"
@@ -107,13 +103,10 @@ jobs:
           Expand-Archive -Path $zipFile -DestinationPath $installPath -Force
 
           Write-Host "🔥 Starting Sunshine Service..."
-          # Start the server in the background
           Start-Process -FilePath "$installPath\sunshine.exe" -ArgumentList "-d" -Wait -PassThru 
           
           Write-Host "✅ Sunshine (Moonlight Server) is now running."
           
-      
-
       - name: 🌍 Install & Connect ZeroTier
         if: ${{ github.event.inputs.ZEROTIER_NETWORK_ID != '' }}
         shell: pwsh
@@ -124,37 +117,26 @@ jobs:
           Invoke-WebRequest -Uri $url -OutFile $output -UseBasicParsing
 
           Write-Host "💾 Installing ZeroTier..."
-          # Silent install: /i is install, /qn is quiet no UI, /norestart
           Start-Process msiexec.exe -ArgumentList "/i `"$output`" /qn /norestart" -Wait
 
           Write-Host "🔗 Joining ZeroTier Network..."
-          # Path to the CLI executable after installation
           $ztPath = "C:\Program Files\ZeroTier\One\zerotier-cli.exe"
           
           if (Test-Path $ztPath) {
-             # Join the network
              & $ztPath join $env:ZEROTIER_NETWORK_ID
-             
-             # Wait a moment for network assignment
              Start-Sleep -Seconds 10
              
-             Write-Host "✅ ZeroTier Joined. You must authorize this node in your ZeroTier Central console."
-             Write-Host "   Node Status:"
+             Write-Host "✅ ZeroTier Joined. Remember to authorize this node in your Central console."
              & $ztPath info
           } else {
              Write-Error "❌ ZeroTier installation failed."
           }
           
-      
-
       - name: 🏃 Keep Runner Alive
         shell: pwsh
         run: |
           Write-Host "✅ Runner is active. Session is ready."
           Write-Host "👉 Connect via CRD: https://remotedesktop.google.com/access"
-          if ($env:ZEROTIER_NETWORK_ID) {
-             Write-Host "👉 Connect Sunshine/Moonlight via ZeroTier IP (Authorize the node first!)."
-          }
           
           $seconds = 21600 # 6 hours
           while ($seconds -gt 0) {
@@ -168,4 +150,6 @@ jobs:
       - name: 💠 Final Status
         if: always()
         shell: pwsh
-        run: Write-Host "🏁 Session Finished."
+        run: |
+          Write-Host "✅ Session Finished."
+          Write-Host "🔋 Powered by: SHAHZAIB-YT"
