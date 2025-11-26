@@ -49,7 +49,6 @@ jobs:
           if (-not $env:TAILSCALE_AUTHKEY) { Write-Warning "⚠️ Skipping Tailscale." }
           Write-Host "✅ Inputs validated."
 
-      ---
 
       - name: 💻 Install Virtual Display Driver (Fixes Lag)
         shell: pwsh
@@ -64,7 +63,6 @@ jobs:
 
           Write-Host "✅ Virtual Display Driver installed. This prevents display lag/sleep."
           
-      ---
 
       - name: ⚙️ Install & Configure Chrome Remote Desktop
         shell: pwsh
@@ -93,7 +91,6 @@ jobs:
 
           Write-Host "✅ CRD setup complete."
           
-      ---
 
       - name: ☀️ Install & Configure Sunshine (for Moonlight)
         shell: pwsh
@@ -116,7 +113,6 @@ jobs:
           Write-Host "✅ Sunshine (Moonlight Server) is now running."
           Write-Host "   You can access the UI via CRD or Tailscale at https://127.0.0.1:47990/"
           
-      ---
 
       - name: 🦎 Install & Connect Tailscale
         if: ${{ github.event.inputs.TAILSCALE_AUTHKEY != '' }}
@@ -139,7 +135,6 @@ jobs:
              Write-Error "❌ Tailscale installation failed."
           }
           
-      ---
 
       - name: 🏃 Keep Runner Alive
         shell: pwsh
