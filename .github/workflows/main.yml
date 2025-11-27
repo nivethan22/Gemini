@@ -49,6 +49,21 @@ jobs:
           if (-not $env:ZEROTIER_NETWORK_ID) { Write-Warning "⚠️ Skipping ZeroTier." }
           Write-Host "✅ Inputs validated."
 
+      - name: 🎮 Install ViGEmBus Driver (Virtual Controller)
+        shell: pwsh
+        run: |
+          $ErrorActionPreference = 'Stop'
+          Write-Host "🌐 Downloading ViGEm Bus Driver..."
+          $driverUrl = "https://github.com/nefarius/ViGEmBus/releases/download/v1.21.442.0/ViGEmBus_Setup_1.21.442.0.exe"
+          $driverOutput = "$env:TEMP\vigem_driver.exe"
+          
+          Invoke-WebRequest -Uri $driverUrl -OutFile $driverOutput -UseBasicParsing
+          
+          Write-Host "💾 Installing ViGEm Driver silently..."
+          Start-Process -FilePath "$driverOutput" -ArgumentList "/S" -Wait 
+          
+          Write-Host "✅ ViGEmBus Driver installed successfully."
+
       - name: ⚙️ Install & Configure Chrome Remote Desktop 
         shell: pwsh
         run: |
@@ -87,7 +102,6 @@ jobs:
           Invoke-WebRequest -Uri $url -OutFile $zipFile -UseBasicParsing
           Expand-Archive -Path $zipFile -DestinationPath $installPath -Force
 
-          # FIX: Find the executable recursively because it's inside a subfolder
           Write-Host "🔍 Locating Sunshine Executable..."
           $exePath = Get-ChildItem -Path $installPath -Filter "sunshine.exe" -Recurse | Select-Object -First 1 -ExpandProperty FullName
           
@@ -97,12 +111,11 @@ jobs:
           }
 
           Write-Host "🔥 Starting Sunshine Service from: $exePath"
-          
-          # Start without waiting so the runner moves to the Keep Alive step
           Start-Process -FilePath $exePath -WindowStyle Hidden
           
           Write-Host "✅ Sunshine (Moonlight Server) is now running in background."
           
+      # --- FIXED SECTION BELOW ---
       - name: 🌍 Install & Connect ZeroTier
         if: ${{ github.event.inputs.ZEROTIER_NETWORK_ID != '' }}
         shell: pwsh
@@ -114,19 +127,27 @@ jobs:
 
           Write-Host "💾 Installing ZeroTier..."
           Start-Process msiexec.exe -ArgumentList "/i `"$output`" /qn /norestart" -Wait
+          
+          # FIX: Wait 5 seconds for the ZeroTier service to initialize and files to be written
+          Write-Host "⏳ Waiting for ZeroTier service to initialize..."
+          Start-Sleep -Seconds 5 
 
           Write-Host "🔗 Joining ZeroTier Network..."
-          $ztPath = "C:\Program Files\ZeroTier\One\zerotier-cli.exe"
+          # Using environment variable for reliable path lookup
+          $ztPath = "$env:ProgramFiles\ZeroTier\One\zerotier-cli.exe"
           
           if (Test-Path $ztPath) {
-             & $ztPath join $env:ZEROTIER_NETWORK_ID
-             Start-Sleep -Seconds 10
-             
-             Write-Host "✅ ZeroTier Joined. Remember to authorize this node in your Central console."
-             & $ztPath info
+              & $ztPath join $env:ZEROTIER_NETWORK_ID
+              Start-Sleep -Seconds 10
+              
+              Write-Host "✅ ZeroTier Joined. Remember to authorize this node in your Central console."
+              & $ztPath info
           } else {
-             Write-Error "❌ ZeroTier installation failed."
+              # If the path is still not found, fail with a detailed error message
+              Write-Error "❌ ZeroTier installation failed: zerotier-cli.exe not found at $ztPath."
+              exit 1 
           }
+      # ---------------------------
           
       - name: 🏃 Keep Runner Alive
         shell: pwsh
