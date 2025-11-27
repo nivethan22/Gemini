@@ -49,24 +49,6 @@ jobs:
           if (-not $env:ZEROTIER_NETWORK_ID) { Write-Warning "⚠️ Skipping ZeroTier." }
           Write-Host "✅ Inputs validated."
 
-      # --- FIXED SECTION BELOW ---
-      - name: 🎮 Install ViGEmBus Driver (Virtual Controller)
-        shell: pwsh
-        run: |
-          $ErrorActionPreference = 'Stop'
-          Write-Host "🌐 Downloading ViGEm Bus Driver..."
-          # UPDATED: Using the working URL from Nefarius (current maintainer)
-          $driverUrl = "https://github.com/nefarius/ViGEmBus/releases/download/v1.21.442.0/ViGEmBus_Setup_1.21.442.0.exe"
-          $driverOutput = "$env:TEMP\vigem_driver.exe"
-          
-          Invoke-WebRequest -Uri $driverUrl -OutFile $driverOutput -UseBasicParsing
-          
-          Write-Host "💾 Installing ViGEm Driver silently..."
-          Start-Process -FilePath "$driverOutput" -ArgumentList "/S" -Wait 
-          
-          Write-Host "✅ ViGEmBus Driver installed successfully."
-      # ---------------------------
-
       - name: ⚙️ Install & Configure Chrome Remote Desktop 
         shell: pwsh
         run: |
