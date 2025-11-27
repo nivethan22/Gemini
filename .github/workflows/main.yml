@@ -87,10 +87,21 @@ jobs:
           Invoke-WebRequest -Uri $url -OutFile $zipFile -UseBasicParsing
           Expand-Archive -Path $zipFile -DestinationPath $installPath -Force
 
-          Write-Host "🔥 Starting Sunshine Service..."
-          Start-Process -FilePath "$installPath\sunshine.exe" -ArgumentList "-d" -Wait -PassThru 
+          # FIX: Find the executable recursively because it's inside a subfolder
+          Write-Host "🔍 Locating Sunshine Executable..."
+          $exePath = Get-ChildItem -Path $installPath -Filter "sunshine.exe" -Recurse | Select-Object -First 1 -ExpandProperty FullName
           
-          Write-Host "✅ Sunshine (Moonlight Server) is now running."
+          if (-not $exePath) { 
+              Write-Error "❌ Could not find sunshine.exe in extracted files!" 
+              exit 1 
+          }
+
+          Write-Host "🔥 Starting Sunshine Service from: $exePath"
+          
+          # Start without waiting so the runner moves to the Keep Alive step
+          Start-Process -FilePath $exePath -WindowStyle Hidden
+          
+          Write-Host "✅ Sunshine (Moonlight Server) is now running in background."
           
       - name: 🌍 Install & Connect ZeroTier
         if: ${{ github.event.inputs.ZEROTIER_NETWORK_ID != '' }}
