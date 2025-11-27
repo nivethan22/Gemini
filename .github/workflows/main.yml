@@ -39,7 +39,7 @@ jobs:
         shell: pwsh
         run: |
           Write-Host "==============================================="
-          Write-Host "🔹 EnigMano Instance     : $env:INSTANCE_ID"
+          Write-Host "🔹 EnigMano Instance      : $env:INSTANCE_ID"
           Write-Host "==============================================="
 
       - name: 🔐 Validate Inputs
@@ -49,12 +49,14 @@ jobs:
           if (-not $env:ZEROTIER_NETWORK_ID) { Write-Warning "⚠️ Skipping ZeroTier." }
           Write-Host "✅ Inputs validated."
 
-      - name: 💻 Install Virtual Display Driver (Fixes Lag)
+      # --- FIXED SECTION BELOW ---
+      - name: 🎮 Install ViGEmBus Driver (Virtual Controller)
         shell: pwsh
         run: |
           $ErrorActionPreference = 'Stop'
-          Write-Host "🌐 Downloading ViGEm Bus Driver (Virtual Display)..."
-          $driverUrl = "https://github.com/ViGEm/ViGEmBus/releases/download/v1.17.333.0/ViGEmBus_Setup_1.17.333.0.exe"
+          Write-Host "🌐 Downloading ViGEm Bus Driver..."
+          # UPDATED: Using the working URL from Nefarius (current maintainer)
+          $driverUrl = "https://github.com/nefarius/ViGEmBus/releases/download/v1.21.442.0/ViGEmBus_Setup_1.21.442.0.exe"
           $driverOutput = "$env:TEMP\vigem_driver.exe"
           
           Invoke-WebRequest -Uri $driverUrl -OutFile $driverOutput -UseBasicParsing
@@ -62,7 +64,8 @@ jobs:
           Write-Host "💾 Installing ViGEm Driver silently..."
           Start-Process -FilePath "$driverOutput" -ArgumentList "/S" -Wait 
           
-          Write-Host "✅ Virtual Display Driver installed successfully."
+          Write-Host "✅ ViGEmBus Driver installed successfully."
+      # ---------------------------
 
       - name: ⚙️ Install & Configure Chrome Remote Desktop 
         shell: pwsh
@@ -75,7 +78,7 @@ jobs:
           Invoke-WebRequest -Uri $url -OutFile $output -UseBasicParsing
           Start-Process msiexec.exe -ArgumentList "/i `"$output`" /qn" -Wait
 
-          # 2. Register CRD using the binary (CONFIRMED WORKING)
+          # 2. Register CRD using the binary
           Write-Host "🔑 Registering CRD Host..."
           $crdExecutable = "${Env:PROGRAMFILES(X86)}\Google\Chrome Remote Desktop\CurrentVersion\remoting_start_host.exe"
           
