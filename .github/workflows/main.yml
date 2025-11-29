@@ -62,6 +62,10 @@ jobs:
           $crdOutput = "$env:TEMP\crd.msi"
           Invoke-WebRequest -Uri $crdUrl -OutFile $crdOutput -UseBasicParsing
           Start-Process msiexec.exe -ArgumentList "/i `"$crdOutput`" /qn" -Wait
+          
+          # Give the CRD service a moment to start after installation
+          Write-Host "⏳ Waiting for CRD service initialization..."
+          Start-Sleep -Seconds 5 
 
           # 2. Register CRD using the binary
           Write-Host "🔑 Registering CRD Host..."
@@ -80,32 +84,9 @@ jobs:
 
           # 3. Set Virtual Display Resolution (1600x900)
           Write-Host "🖥️ Setting display resolution to 1600x900..."
-          # Windows often loads a Generic/Basic display driver on headless VMs. 
-          # We use the built-in PnP utility to ensure resolution is set.
-          # This is highly runner-dependent, but often works by forcing a video mode.
-          # NOTE: On some runners, this command may require the user to be logged in interactively.
-          try {
-              # If the Set-DisplayResolution command is available (via custom scripts/modules)
-              # or if the runner's environment allows it directly.
-              # We use a standard Windows tool for demonstration, often included or available.
-              # Note: For GitHub Runners, resolution is usually managed by the hosting environment.
-              # If the runner supports it, this is the command:
-              $pnpUtilPath = "$env:WINDIR\System32\PnPUtil.exe"
-              if (Test-Path $pnpUtilPath) {
-                  Write-Host "PnPUtil found. Skipping manual driver install, relying on CRD/Sunshine to manage display."
-              } else {
-                  Write-Host "CRD will attempt to initialize the display on connect. Target: 1600x900."
-              }
-              
-              # A robust solution requires external tools like nircmd or a display utility. 
-              # For this environment, we rely on CRD to provide a session at 1600x900.
-              # We use the /set-resolution command if it were available (simulating the call):
-              # & 'Set-DisplayResolution.exe' 1600 900
-              Write-Host "Resolution setting deferred to CRD/Sunshine for optimal configuration."
-
-          } catch {
-              Write-Warning "⚠️ Could not force resolution via standard PowerShell commands."
-          }
+          # The recommended method for headless runners is to rely on CRD/Sunshine 
+          # to negotiate the optimal resolution, often achieving 1600x900 or better.
+          Write-Host "Resolution setting deferred to CRD/Sunshine for optimal configuration."
 
           Write-Host "✅ CRD setup complete."
           
@@ -121,8 +102,9 @@ jobs:
           # Install ZeroTier silently
           Start-Process msiexec.exe -ArgumentList "/i `"$ztOutput`" /qn /norestart" -Wait
 
-          # Wait for the service to start
-          Start-Sleep -Seconds 5
+          # Wait longer for the service to start
+          Write-Host "⏳ Waiting for ZeroTier service to start..."
+          Start-Sleep -Seconds 10
           
           # ZeroTier CLI path
           $ztCli = "${Env:PROGRAMFILES}\ZeroTier\One\zerotier-cli.exe"
@@ -166,6 +148,10 @@ jobs:
           # Start as a background process
           Write-Host "🔥 Starting Sunshine Service from: $exePath"
           Start-Process -FilePath $exePath -WindowStyle Hidden
+          
+          # Give Sunshine a moment to initialize its web server and streaming components
+          Write-Host "⏳ Waiting for Sunshine to initialize..."
+          Start-Sleep -Seconds 10
           
           Write-Host "✅ Sunshine (Moonlight Server) is now running in background."
           
