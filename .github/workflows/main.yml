@@ -31,7 +31,6 @@ jobs:
       INSTANCE_ID: ${{ github.event.inputs.INSTANCE }}
       CRD_PIN: ${{ github.event.inputs.CRD_PIN }}
       CRD_TOKEN: ${{ github.event.inputs.CRD_TOKEN }}
-      ZEROTIER_NETWORK_ID: ${{ github.event.inputs.ZEROTIER_NETWORK_ID }}
       SESSION_DURATION_HOURS: 6 # Maximum duration for GitHub Actions
 
     steps:
@@ -81,80 +80,6 @@ jobs:
                            --redirect-url="https://remotedesktop.google.com/_/oauthredirect" `
                            --name="$hostName" `
                            --pin="$env:CRD_PIN"
-
-          # 3. Set Virtual Display Resolution (1600x900)
-          Write-Host "🖥️ Setting display resolution to 1600x900..."
-          # The recommended method for headless runners is to rely on CRD/Sunshine 
-          # to negotiate the optimal resolution, often achieving 1600x900 or better.
-          Write-Host "Resolution setting deferred to CRD/Sunshine for optimal configuration."
-
-          Write-Host "✅ CRD setup complete."
-          
-      - name: 🌐 Install & Configure ZeroTier
-        shell: pwsh
-        run: |
-          $ErrorActionPreference = 'Stop'
-          Write-Host "🌐 Downloading & Installing ZeroTier..."
-          $ztUrl = "https://download.zerotier.com/dist/ZeroTier%20One.msi"
-          $ztOutput = "$env:TEMP\ZeroTierOne.msi"
-          Invoke-WebRequest -Uri $ztUrl -OutFile $ztOutput -UseBasicParsing
-          
-          # Install ZeroTier silently
-          Start-Process msiexec.exe -ArgumentList "/i `"$ztOutput`" /qn /norestart" -Wait
-
-          # Wait longer for the service to start
-          Write-Host "⏳ Waiting for ZeroTier service to start..."
-          Start-Sleep -Seconds 10
-          
-          # ZeroTier CLI path
-          $ztCli = "${Env:PROGRAMFILES}\ZeroTier\One\zerotier-cli.exe"
-
-          if (Test-Path $ztCli) {
-            Write-Host "🔑 Joining ZeroTier network: $env:ZEROTIER_NETWORK_ID"
-            & $ztCli join $env:ZEROTIER_NETWORK_ID
-            
-            # Wait for join process
-            Start-Sleep -Seconds 10
-            
-            Write-Host "IP Status (Check after 10s):"
-            & $ztCli get $env:ZEROTIER_NETWORK_ID status
-            Write-Host "✅ ZeroTier configured. Remember to authorize the device on your ZeroTier Central account."
-          } else {
-            Write-Error "❌ ZeroTier CLI not found after installation. Skipping join."
-            exit 1
-          }
-
-
-      - name: ☀️ Install & Configure Sunshine (for Moonlight)
-        shell: pwsh
-        run: |
-          $ErrorActionPreference = 'Stop'
-          Write-Host "🌐 Downloading Sunshine (Streaming Server)..."
-          $url = "https://github.com/LizardByte/Sunshine/releases/download/v0.22.0/sunshine-windows-portable.zip"
-          $zipFile = "$env:TEMP\sunshine.zip"
-          $installPath = "C:\Sunshine"
-
-          Invoke-WebRequest -Uri $url -OutFile $zipFile -UseBasicParsing
-          Expand-Archive -Path $zipFile -DestinationPath $installPath -Force
-
-          Write-Host "🔍 Locating Sunshine Executable..."
-          $exePath = Get-ChildItem -Path $installPath -Filter "sunshine.exe" -Recurse | Select-Object -First 1 -ExpandProperty FullName
-          
-          if (-not $exePath) { 
-              Write-Error "❌ Could not find sunshine.exe in extracted files!" 
-              exit 1 
-          }
-
-          # Start as a background process
-          Write-Host "🔥 Starting Sunshine Service from: $exePath"
-          Start-Process -FilePath $exePath -WindowStyle Hidden
-          
-          # Give Sunshine a moment to initialize its web server and streaming components
-          Write-Host "⏳ Waiting for Sunshine to initialize..."
-          Start-Sleep -Seconds 10
-          
-          Write-Host "✅ Sunshine (Moonlight Server) is now running in background."
-          
           
       - name: 🏃 Keep Runner Alive (Max 6 Hours)
         shell: pwsh
