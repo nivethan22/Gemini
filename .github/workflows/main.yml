@@ -17,23 +17,35 @@ jobs:
     
     steps:
     - name: 🖥️ Set up Virtual Display (CRITICAL)
-      # This step must remain to prevent a black screen, as runners are headless.
-      # You stated "no virtual display alr" but this is required for successful CRD streaming.
-      # If you are absolutely sure you don't need it, you can remove this step.
+      shell: pwsh
       run: |
-        $url = "https://www.amyuni.com/downloads/usbmmidd_v2.zip"
-        $dest = "$env:TEMP\usbmmidd.zip"
-        Invoke-WebRequest -Uri $url -OutFile $dest
-        Expand-Archive -Path $dest -DestinationPath "C:\usbmmidd" -Force
-        cd C:\usbmmidd
-        certutil -addstore "TrustedPublisher" .\usbmmidd.cer
-        .\deviceinstaller64.exe install usbmmidd.inf usbmmidd
-        .\deviceinstaller64.exe enableidd 1
+        $ErrorActionPreference = 'Stop'
+        $extractPath = "C:\usbmmidd"
+        $certPath = Join-Path $extractPath "usbmmidd.cer"
+        $exePath = Join-Path $extractPath "deviceinstaller64.exe"
+        
+        Write-Host "⬇️ Downloading & Extracting Virtual Display Driver..."
+        Invoke-WebRequest -Uri "https://www.amyuni.com/downloads/usbmmidd_v2.zip" -OutFile "$env:TEMP\usbmmidd.zip"
+        Expand-Archive -Path "$env:TEMP\usbmmidd.zip" -DestinationPath $extractPath -Force
+        
+        # 1. Install Certificate (using full path to the cert)
+        Write-Host "🔐 Installing Certificate..."
+        certutil -addstore "TrustedPublisher" $certPath
+        
+        # 2. Install Device (using full path to the executable)
+        Write-Host "⚙️ Installing Device..."
+        & $exePath install (Join-Path $extractPath "usbmmidd.inf") usbmmidd
+        
+        # 3. Enable Display (using full path to the executable)
+        Write-Host "📺 Enabling Display..."
+        & $exePath enableidd 1
 
     - name: ⬇️ Install Chrome Remote Desktop
+      shell: pwsh
       run: |
         $crdUrl = "https://dl.google.com/dl/edgedl/chrome-remote-desktop/chromeremotedesktophost.msi"
         $crdDest = "$env:TEMP\crd.msi"
+        
         Invoke-WebRequest -Uri $crdUrl -OutFile $crdDest
         Start-Process msiexec.exe -ArgumentList "/i `"$crdDest`" /qn" -Wait
         Start-Sleep -Seconds 5
@@ -43,24 +55,21 @@ jobs:
       run: |
         $ErrorActionPreference = 'Stop'
         
-        # Define the base executable path
-        $crdExecutable = "$env:ProgramFiles(x86)\Google\Chrome Remote Desktop\CurrentVersion\remoting_start_host.exe"
+        # FIX: Using the reliable $env:ProgramFilesX86 variable to avoid PowerShell parsing issues with parentheses.
+        $crdExecutable = Join-Path $env:ProgramFilesX86 "Google\Chrome Remote Desktop\CurrentVersion\remoting_start_host.exe"
         
         # Fallback for 64-bit installation path
         if (-not (Test-Path $crdExecutable)) {
-            $crdExecutable = "$env:ProgramFiles\Google\Chrome Remote Desktop\CurrentVersion\remoting_start_host.exe"
+            $crdExecutable = Join-Path $env:ProgramFiles "Google\Chrome Remote Desktop\CurrentVersion\remoting_start_host.exe"
         }
         
-        # Check if the executable exists
         if (-not (Test-Path $crdExecutable)) {
-            Write-Error "❌ Chrome Remote Desktop executable not found at: $crdExecutable"
+            Write-Error "❌ Chrome Remote Desktop executable not found."
             exit 1
         }
         
-        Write-Host "✅ Executable found at: $crdExecutable"
-        
         # Run the registration command using the call operator (&)
-        # Note: We now reference the GitHub input directly
+        # Note: We trust the GitHub input ${{ github.event.inputs.CRD_CODE }} is the code itself.
         & $crdExecutable --code="${{ github.event.inputs.CRD_CODE }}" `
                          --redirect-url="https://remotedesktop.google.com/_/oauthredirect" `
                          --name="GitHub-Win-Latest" `
@@ -69,9 +78,10 @@ jobs:
         Write-Host "✅ CRD Host registered successfully."
 
     - name: 🕒 Keep Alive (6 Hours)
+      shell: pwsh
       run: |
         Write-Host "Connect at https://remotedesktop.google.com/access"
-        # Simple loop to keep CPU active and runner alive
+        # 6 hours = 360 minutes
         for ($i=0; $i -lt 360; $i++) {
             Start-Sleep -Seconds 60
             Write-Host "Time remaining: $(360 - $i) minutes"
