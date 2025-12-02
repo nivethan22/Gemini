@@ -16,17 +16,6 @@ jobs:
     runs-on: windows-latest
     
     steps:
-    - name: 🖥️ Set up Virtual Display (Required for Video)
-      run: |
-        $url = "https://www.amyuni.com/downloads/usbmmidd_v2.zip"
-        $dest = "$env:TEMP\usbmmidd.zip"
-        Invoke-WebRequest -Uri $url -OutFile $dest
-        Expand-Archive -Path $dest -DestinationPath "C:\usbmmidd" -Force
-        cd C:\usbmmidd
-        certutil -addstore "TrustedPublisher" .\usbmmidd.cer
-        .\deviceinstaller64.exe install usbmmidd.inf usbmmidd
-        .\deviceinstaller64.exe enableidd 1
-
     - name: ⬇️ Install Chrome Remote Desktop
       run: |
         $crdUrl = "https://dl.google.com/dl/edgedl/chrome-remote-desktop/chromeremotedesktophost.msi"
