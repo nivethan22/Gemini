@@ -16,28 +16,61 @@ jobs:
     runs-on: windows-latest
     
     steps:
+    - name: 🖥️ Set up Virtual Display (CRITICAL)
+      # This step must remain to prevent a black screen, as runners are headless.
+      # You stated "no virtual display alr" but this is required for successful CRD streaming.
+      # If you are absolutely sure you don't need it, you can remove this step.
+      run: |
+        $url = "https://www.amyuni.com/downloads/usbmmidd_v2.zip"
+        $dest = "$env:TEMP\usbmmidd.zip"
+        Invoke-WebRequest -Uri $url -OutFile $dest
+        Expand-Archive -Path $dest -DestinationPath "C:\usbmmidd" -Force
+        cd C:\usbmmidd
+        certutil -addstore "TrustedPublisher" .\usbmmidd.cer
+        .\deviceinstaller64.exe install usbmmidd.inf usbmmidd
+        .\deviceinstaller64.exe enableidd 1
+
     - name: ⬇️ Install Chrome Remote Desktop
       run: |
         $crdUrl = "https://dl.google.com/dl/edgedl/chrome-remote-desktop/chromeremotedesktophost.msi"
         $crdDest = "$env:TEMP\crd.msi"
         Invoke-WebRequest -Uri $crdUrl -OutFile $crdDest
         Start-Process msiexec.exe -ArgumentList "/i `"$crdDest`" /qn" -Wait
+        Start-Sleep -Seconds 5
 
     - name: 🔗 Register Host
+      shell: pwsh
       run: |
-        $crdPath = "$env:ProgramFiles(x86)\Google\Chrome Remote Desktop\CurrentVersion\remoting_start_host.exe"
-        if (-not (Test-Path $crdPath)) { $crdPath = "$env:ProgramFiles\Google\Chrome Remote Desktop\CurrentVersion\remoting_start_host.exe" }
+        $ErrorActionPreference = 'Stop'
         
-        # Clean the input code if user pasted the full command
-        $code = "${{ github.event.inputs.CRD_CODE }}"
-        if ($code -match 'code="([^"]+)"') { $code = $matches[1] }
+        # Define the base executable path
+        $crdExecutable = "$env:ProgramFiles(x86)\Google\Chrome Remote Desktop\CurrentVersion\remoting_start_host.exe"
         
-        & $crdPath --code="$code" --redirect-url="https://remotedesktop.google.com/_/oauthredirect" --name="GitHub-Win-Latest" --pin="${{ github.event.inputs.CRD_PIN }}"
+        # Fallback for 64-bit installation path
+        if (-not (Test-Path $crdExecutable)) {
+            $crdExecutable = "$env:ProgramFiles\Google\Chrome Remote Desktop\CurrentVersion\remoting_start_host.exe"
+        }
+        
+        # Check if the executable exists
+        if (-not (Test-Path $crdExecutable)) {
+            Write-Error "❌ Chrome Remote Desktop executable not found at: $crdExecutable"
+            exit 1
+        }
+        
+        Write-Host "✅ Executable found at: $crdExecutable"
+        
+        # Run the registration command using the call operator (&)
+        # Note: We now reference the GitHub input directly
+        & $crdExecutable --code="${{ github.event.inputs.CRD_CODE }}" `
+                         --redirect-url="https://remotedesktop.google.com/_/oauthredirect" `
+                         --name="GitHub-Win-Latest" `
+                         --pin="${{ github.event.inputs.CRD_PIN }}"
+        
+        Write-Host "✅ CRD Host registered successfully."
 
     - name: 🕒 Keep Alive (6 Hours)
       run: |
         Write-Host "Connect at https://remotedesktop.google.com/access"
-        $files = Get-ChildItem -Path "C:\Windows\System32"
         # Simple loop to keep CPU active and runner alive
         for ($i=0; $i -lt 360; $i++) {
             Start-Sleep -Seconds 60
